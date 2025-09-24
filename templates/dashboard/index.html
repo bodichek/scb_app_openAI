@@ -1,68 +1,112 @@
-{% extends 'base.html' %}
-{% block title %}Dashboard{% endblock %}
-{% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-{% endblock %}
+{% extends "base.html" %}
 {% block content %}
-<h2>Dashboard</h2>
-<form method="get">
-  <div class="grid">
-    <div>
-      <label>Group by</label>
-      <select name="group_by">
-        <option value="">-- choose --</option>
-        {% for c in known_columns %}
-          <option value="{{ c }}" {% if c == group_by %}selected{% endif %}>{{ c }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label>Value column</label>
-      <select name="value_col">
-        <option value="">(none)</option>
-        {% for c in known_columns %}
-          <option value="{{ c }}" {% if c == value_col %}selected{% endif %}>{{ c }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label>Aggregation</label>
-      <select name="agg">
-        <option value="count" {% if agg == 'count' %}selected{% endif %}>count</option>
-        <option value="sum" {% if agg == 'sum' %}selected{% endif %}>sum</option>
-        <option value="avg" {% if agg == 'avg' %}selected{% endif %}>avg</option>
-      </select>
-    </div>
-  </div>
-  <button type="submit">Render</button>
-</form>
+<h2>📊 Dashboard</h2>
 
-{% if chart %}
-  <h3>{{ chart.title }}</h3>
-  <canvas id="chart" height="120"></canvas>
-  <script>
-    const ctx = document.getElementById('chart');
-    const chart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: {{ chart.labels|safe }},
-        datasets: [{
-          label: '{{ chart.title }}',
-          data: {{ chart.values|safe }},
-          backgroundColor: 'rgba(54, 162, 235, 0.5)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: {
-            beginAtZero: true
-          }
-        }
-      }
-    });
-  </script>
+<h3>Výsledovky</h3>
+{% if income_statements %}
+<table border="1" cellpadding="5">
+  <thead>
+    <tr>
+      <th>Rok</th>
+      <th>Tržby</th>
+      <th>Náklady</th>
+      <th>Zisk</th>
+      <th>Validace</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for year, data in income_statements.items %}
+    <tr>
+      <td>{{ year }}</td>
+      <td>{{ data.revenue|floatformat:0 }}</td>
+      <td>{{ data.costs|floatformat:0 }}</td>
+      <td>{{ data.profit|floatformat:0 }}</td>
+      <td>
+        {% if data.valid %}
+          <span style="color: green;">✅</span>
+        {% else %}
+          <span style="color: red;">❌</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<canvas id="incomeChart" width="400" height="200"></canvas>
+{% else %}
+<p>Žádné výsledovky</p>
 {% endif %}
+
+
+<h3>Rozvahy</h3>
+{% if balance_sheets %}
+<table border="1" cellpadding="5">
+  <thead>
+    <tr>
+      <th>Rok</th>
+      <th>Aktiva</th>
+      <th>Pasiva</th>
+      <th>Vlastní kapitál</th>
+      <th>Validace</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for year, data in balance_sheets.items %}
+    <tr>
+      <td>{{ year }}</td>
+      <td>{{ data.assets|floatformat:0 }}</td>
+      <td>{{ data.liabilities|floatformat:0 }}</td>
+      <td>{{ data.equity|floatformat:0 }}</td>
+      <td>
+        {% if data.valid %}
+          <span style="color: green;">✅</span>
+        {% else %}
+          <span style="color: red;">❌</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Žádné rozvahy</p>
+{% endif %}
+
+<hr>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  {% if income_statements %}
+  const ctx = document.getElementById('incomeChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [{% for year, data in income_statements.items %}'{{ year }}',{% endfor %}],
+      datasets: [
+        {
+          label: 'Tržby',
+          data: [{% for year, data in income_statements.items %}{{ data.revenue|default:0 }},{% endfor %}],
+          borderColor: 'blue',
+          fill: false
+        },
+        {
+          label: 'Zisk',
+          data: [{% for year, data in income_statements.items %}{{ data.profit|default:0 }},{% endfor %}],
+          borderColor: 'green',
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' }
+      }
+    }
+  });
+  {% endif %}
+</script>
+
 {% endblock %}

@@ -1,31 +1,40 @@
-{% extends 'base.html' %}
-{% block title %}Documents{% endblock %}
+{% extends "base.html" %}
+{% block title %}Moje dokumenty{% endblock %}
+
 {% block content %}
-<h2>Documents</h2>
-<table>
+<h2>📂 Moje dokumenty</h2>
+
+{% if documents %}
+<table class="table table-striped">
   <thead>
     <tr>
-      <th>ID</th>
-      <th>Soubor</th>
+      <th>Název</th>
       <th>Typ</th>
       <th>Rok</th>
-            <th>Nahráno</th>
-      <th>Akce</th>
+      <th>Tabulky</th>
+      <th>Poznámka</th>
+      <th>Nahráno</th>
+      <th>Akce</th>   {# nový sloupec #}
     </tr>
   </thead>
   <tbody>
-    {% for d in documents %}
+    {% for doc in documents %}
     <tr>
-      <td>{{ d.id }}</td>
-      <td>{{ d.original_filename }}</td>
-      <td>{{ d.get_doc_type_display }}</td>
-      <td>{{ d.year }}</td>
-            <td>{{ d.uploaded_at }}</td>
-      <td><a href="{% url 'ingestion:document_detail' d.id %}">Otevřít</a></td>
+      <td>{{ doc.original_filename }}</td>
+      <td>{{ doc.doc_type }}</td>
+      <td>{{ doc.year }}</td>
+      <td>{{ doc.tables.count }}</td>
+      <td>{{ doc.notes|default:"-" }}</td>
+      <td>{{ doc.uploaded_at|date:"d.m.Y H:i" }}</td>
+      <td>
+        <a href="{% url 'ingestion:document_detail' doc.id %}" class="btn btn-sm btn-info">Detail</a>
+        <a href="{% url 'ingestion:delete_document' doc.id %}" class="btn btn-sm btn-danger">Smazat</a>
+      </td>
     </tr>
-    {% empty %}
-    <tr><td colspan="7">Zatím žádné dokumenty.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>Nemáte zatím žádné dokumenty.</p>
+{% endif %}
 {% endblock %}

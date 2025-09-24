@@ -1,27 +1,34 @@
-{% extends 'base.html' %}
-{% block title %}Table {{ table.id }}{% endblock %}
-{% block content %}
-<h2>Table {{ table.id }}</h2>
-<p>Document: {{ table.document.original_filename }}</p>
-<p>Page: {{ table.page_number }} | Index: {{ table.table_index }} | Method: {{ table.method }}</p>
+{% extends "base.html" %}
+{% load dict_extras %}
+{% block title %}Detail tabulky{% endblock %}
 
-<table>
+{% block content %}
+<h2>📊 Tabulka z dokumentu</h2>
+
+<p>
+  <strong>Strana:</strong> {{ table.page_number }}<br>
+  <strong>Metoda:</strong> {{ table.method }}<br>
+  <strong>Řádků:</strong> {{ table.meta.rows }}
+</p>
+
+<!-- Tlačítko pro smazání tabulky -->
+<a href="{% url 'ingestion:delete_table' table.id %}" class="btn btn-danger mb-3">Smazat tabulku</a>
+
+<table class="table table-bordered table-sm">
   <thead>
     <tr>
-      {% for c in table.columns %}
-        <th>{{ c }}</th>
+      {% for col in table.columns %}
+        <th>{{ col }}</th>
       {% endfor %}
     </tr>
   </thead>
   <tbody>
-    {% for r in table.rows.all %}
-      <tr>
-        {% for c in table.columns %}
-          <td>{{ r.data|get_item:c }}</td>
-        {% endfor %}
-      </tr>
-    {% empty %}
-      <tr><td colspan="99">No rows.</td></tr>
+    {% for row in table.rows.all %}
+    <tr>
+      {% for col in table.columns %}
+        <td>{{ row.data|get_item:col }}</td>
+      {% endfor %}
+    </tr>
     {% endfor %}
   </tbody>
 </table>

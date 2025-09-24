@@ -7,35 +7,29 @@ from django.contrib.auth.decorators import login_required
 from .forms import MultiUploadForm
 from .models import Document, ExtractedTable, ExtractedRow
 
-import io
-import re
 import pandas as pd
-
-# Extraction libraries
+import re
 import camelot
 import pdfplumber
 
 
+# 🔹 Utility pro čištění tabulek
 def _clean_headers(df: pd.DataFrame) -> pd.DataFrame:
-    # If columns look like 0..N, try to use the first non-empty row as header
     if all(isinstance(c, int) for c in df.columns):
-        # find first row with at least one non-empty value
         header_idx = None
         for i, row in df.iterrows():
-            if any((str(x).strip() != "" and str(x).strip().lower() != "nan") for x in row.tolist()):
+            if any((str(x).strip() not in ["", "nan"]) for x in row.tolist()):
                 header_idx = i
                 break
         if header_idx is not None:
             new_cols = [str(x).strip() for x in df.iloc[header_idx].tolist()]
-            df = df.iloc[header_idx + 1 :].reset_index(drop=True)
+            df = df.iloc[header_idx + 1:].reset_index(drop=True)
             df.columns = new_cols
 
     def normalize(name: str) -> str:
-        s = re.sub(r"\s+", " ", str(name or "").strip())
-        s = s.lower()
+        s = re.sub(r"\s+", " ", str(name or "").strip()).lower()
         s = re.sub(r"[^a-z0-9 _-]", "", s)
-        s = s.replace(" ", "_")
-        return s or "col"
+        return s.replace(" ", "_") or "col"
 
     df.columns = [normalize(c) for c in df.columns]
     return df
@@ -47,9 +41,8 @@ def _clean_cells(df: pd.DataFrame) -> pd.DataFrame:
             return None
         s = str(v).strip()
         s = re.sub(r"\s+", " ", s)
-        if s == "" or s.lower() == "nan":
+        if s in ["", "nan"]:
             return None
-        # normalize numbers
         sn = s.replace(",", "")
         if re.fullmatch(r"-?\d+(\.\d+)?", sn):
             try:
@@ -57,136 +50,124 @@ def _clean_cells(df: pd.DataFrame) -> pd.DataFrame:
             except Exception:
                 pass
         return s
-
     return df.applymap(clean_val)
 
 
 def _drop_empty(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(axis=0, how="all")
     df = df.dropna(axis=1, how="all")
-    df = df.reset_index(drop=True)
-    return df
+    return df.reset_index(drop=True)
 
 
 def _df_to_rows(df: pd.DataFrame) -> list[dict]:
+    """Převede DataFrame na list řádků (dictů)."""
     rows: list[dict] = []
     for _, r in df.iterrows():
         row = {}
         for c in df.columns:
-            row[str(c)] = r[c] if pd.notna(r[c]) else None
+            val = r[c]
+            # Pokud je to Series nebo list → vezmeme první hodnotu
+            if isinstance(val, (pd.Series, list)):
+                val = val[0] if len(val) > 0 else None
+            if pd.isna(val):
+                val = None
+            row[str(c)] = val
         rows.append(row)
     return rows
 
 
-def _extract_with_camelot(path: str) -> list[dict]:
+# 🔹 Pomocná funkce pro zpracování jednoho dokumentu
+def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
+    """Uloží Document + tabulky + řádky, vrátí počet tabulek."""
+    doc = Document.objects.create(
+        file=pdf_file,
+        original_filename=pdf_file.name,
+        owner=user,
+        doc_type=doc_type,
+        year=year,
+        notes=notes
+    )
+
+    path = doc.file.path
     tables = []
+
+    # Camelot lattice
     try:
-        # lattice first
         latt = camelot.read_pdf(path, flavor="lattice", pages="all")
         for i in range(latt.n):
-            df = latt[i].df
-            tables.append({"df": df, "method": "camelot-lattice", "page": latt[i].page})
+            tables.append({"df": latt[i].df, "method": "camelot-lattice", "page": latt[i].page})
     except Exception:
         pass
 
+    # Camelot stream
     try:
-        # then stream
         stream = camelot.read_pdf(path, flavor="stream", pages="all")
         for i in range(stream.n):
-            df = stream[i].df
-            tables.append({"df": df, "method": "camelot-stream", "page": stream[i].page})
+            tables.append({"df": stream[i].df, "method": "camelot-stream", "page": stream[i].page})
     except Exception:
         pass
 
-    return tables
-
-
-def _extract_with_pdfplumber(path: str) -> list[dict]:
-    tables = []
+    # pdfplumber fallback
     try:
         with pdfplumber.open(path) as pdf:
             for pageno, page in enumerate(pdf.pages, start=1):
-                try:
-                    tbs = page.extract_tables()
-                    for idx, tb in enumerate(tbs):
-                        df = pd.DataFrame(tb)
-                        tables.append({"df": df, "method": "pdfplumber", "page": pageno})
-                except Exception:
-                    continue
+                for tb in page.extract_tables() or []:
+                    tables.append({"df": pd.DataFrame(tb), "method": "pdfplumber", "page": pageno})
     except Exception:
         pass
-    return tables
+
+    total = 0
+    for idx, tb in enumerate(tables, start=1):
+        df = pd.DataFrame(tb["df"])
+        df = _clean_headers(df)
+        df = _clean_cells(df)
+        df = _drop_empty(df)
+        if df.empty:
+            continue
+
+        table = ExtractedTable.objects.create(
+            document=doc,
+            page_number=tb["page"],
+            table_index=idx,
+            method=tb["method"],
+            columns=list(df.columns),
+            meta={"rows": len(df)}
+        )
+
+        for row in _df_to_rows(df):
+            ExtractedRow.objects.create(table=table, data=row)
+
+        total += 1
+
+    return total
 
 
+# 🔹 Views
 @login_required
 @transaction.atomic
 def upload_pdf(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
         form = MultiUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            year = int(form.cleaned_data["year"])
+            year = form.cleaned_data.get("year")
             notes = form.cleaned_data.get("notes")
 
-            created_docs = []
+            balance_files = form.cleaned_data.get("balance_files", [])
+            income_files = form.cleaned_data.get("income_files", [])
 
-            def handle_files(files, doc_type: str):
-                nonlocal created_docs
-                for f in files:
-                    doc = Document.objects.create(
-                        owner=request.user,
-                        file=f,
-                        original_filename=f.name,
-                        notes=notes,
-                        doc_type=doc_type,
-                        year=year,
-                    )
-                    path = doc.file.path
-                    candidates = _extract_with_camelot(path) or []
-                    if not candidates:
-                        candidates = _extract_with_pdfplumber(path) or []
+            created_docs = 0
+            total_tables = 0
 
-                    for idx, item in enumerate(candidates):
-                        raw_df = pd.DataFrame(item["df"]) if not isinstance(item["df"], pd.DataFrame) else item["df"]
-                        df = raw_df.copy()
-                        df = _clean_headers(df)
-                        df = _clean_cells(df)
-                        df = _drop_empty(df)
+            for pdf_file in balance_files:
+                created_docs += 1
+                total_tables += _process_document(pdf_file, request.user, year, "balance", notes)
 
-                        table = ExtractedTable.objects.create(
-                            document=doc,
-                            page_number=int(item.get("page") or 1),
-                            table_index=idx,
-                            method=item.get("method", "unknown"),
-                            columns=[str(c) for c in df.columns],
-                            meta={"source_rows": int(raw_df.shape[0]), "source_cols": int(raw_df.shape[1])},
-                        )
-                        rows = _df_to_rows(df)
-                        ExtractedRow.objects.bulk_create(
-                            [ExtractedRow(table=table, data=r) for r in rows]
-                        )
+            for pdf_file in income_files:
+                created_docs += 1
+                total_tables += _process_document(pdf_file, request.user, year, "income", notes)
 
-                    created_docs.append(doc)
-
-            balance_files = request.FILES.getlist("balance_files")
-            income_files = request.FILES.getlist("income_files")
-
-            if not balance_files and not income_files:
-                messages.warning(request, "Nevybrali jste žádné soubory.")
-                return redirect("ingestion:upload")
-
-            if balance_files:
-                handle_files(balance_files, Document.DocType.BALANCE)
-            if income_files:
-                handle_files(income_files, Document.DocType.INCOME)
-
-            if len(created_docs) == 1:
-                messages.success(request, "Soubor nahrán a tabulky extrahovány.")
-                return redirect("ingestion:document_detail", doc_id=created_docs[0].id)
-            else:
-                messages.success(request, f"Nahráno a zpracováno {len(created_docs)} souborů.")
-                return redirect("ingestion:documents")
-        else:
-            messages.error(request, "Neplatné hodnoty formuláře.")
+            messages.success(request, f"Nahráno {created_docs} souborů, extrahováno {total_tables} tabulek.")
+            return redirect("ingestion:documents")
     else:
         form = MultiUploadForm()
 
@@ -209,3 +190,26 @@ def document_detail(request: HttpRequest, doc_id: int) -> HttpResponse:
 def table_detail(request: HttpRequest, table_id: int) -> HttpResponse:
     table = get_object_or_404(ExtractedTable, id=table_id, document__owner=request.user)
     return render(request, "ingestion/table_detail.html", {"table": table})
+
+
+@login_required
+@transaction.atomic
+def delete_document(request, doc_id):
+    doc = get_object_or_404(Document, id=doc_id, owner=request.user)
+    if request.method == "POST":
+        filename = doc.original_filename
+        doc.delete()
+        messages.success(request, f"Dokument {filename} byl smazán.")
+        return redirect("ingestion:documents")
+    return render(request, "ingestion/confirm_delete.html", {"object": doc, "type": "dokument"})
+
+
+@login_required
+@transaction.atomic
+def delete_table(request, table_id):
+    table = get_object_or_404(ExtractedTable, id=table_id, document__owner=request.user)
+    if request.method == "POST":
+        table.delete()
+        messages.success(request, "Tabulka byla smazána.")
+        return redirect("ingestion:document_detail", doc_id=table.document.id)
+    return render(request, "ingestion/confirm_delete.html", {"object": table, "type": "tabulka"})

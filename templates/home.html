@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Vítejte{% endblock %}
+
+{% block content %}
+<div class="text-center mt-5">
+  <h1>👋 Vítejte v SCB App</h1>
+  <p class="lead">Platforma pro analýzu finančních výkazů</p>
+
+  {% if user.is_authenticated %}
+    <a href="{% url 'dashboard:index' %}" class="btn btn-primary btn-lg mt-3">Přejít na Dashboard</a>
+  {% else %}
+    <a href="{% url 'login' %}" class="btn btn-success btn-lg mt-3">Přihlásit se</a>
+    <a href="{% url 'signup' %}" class="btn btn-outline-primary btn-lg mt-3">Zaregistrovat se</a>
+  {% endif %}
+</div>
+{% endblock %}

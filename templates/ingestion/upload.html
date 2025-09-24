@@ -1,36 +1,45 @@
-{% extends 'base.html' %}
-{% block title %}Upload PDF{% endblock %}
+{% extends "base.html" %}
+{% block title %}Nahrát PDF{% endblock %}
+
 {% block content %}
 <h2>Nahrát PDF – Rozvaha a Výsledovka</h2>
-<form action="" method="post" enctype="multipart/form-data">
+
+<form method="post" enctype="multipart/form-data">
   {% csrf_token %}
+  {{ form.non_field_errors }}
 
-  {% if form.non_field_errors %}
-    <article role="alert">
-      {{ form.non_field_errors }}
-    </article>
-  {% endif %}
-
-  <div class="grid">
-    <div>
-      <label for="id_year">Rok</label>
-      {{ form.year }}
-      {% if form.year.errors %}<small role="alert">{{ form.year.errors }}</small>{% endif %}
-    </div>
+  <div class="mb-3">
+    <label for="id_year" class="form-label">Rok</label>
+    {{ form.year }}
+    {% if form.year.errors %}
+      <div class="text-danger">{{ form.year.errors }}</div>
+    {% endif %}
   </div>
 
-  <label for="id_balance_files">Soubory – Rozvaha</label>
-  {{ form.balance_files }}
-  {% if form.balance_files.errors %}<small role="alert">{{ form.balance_files.errors }}</small>{% endif %}
+  <div class="mb-3">
+    <label for="id_balance_files" class="form-label">Soubory – Rozvaha</label>
+    {{ form.balance_files }}
+    {% if form.balance_files.errors %}
+      <div class="text-danger">{{ form.balance_files.errors }}</div>
+    {% endif %}
+  </div>
 
-  <label for="id_income_files">Soubory – Výsledovka</label>
-  {{ form.income_files }}
-  {% if form.income_files.errors %}<small role="alert">{{ form.income_files.errors }}</small>{% endif %}
+  <div class="mb-3">
+    <label for="id_income_files" class="form-label">Soubory – Výsledovka</label>
+    {{ form.income_files }}
+    {% if form.income_files.errors %}
+      <div class="text-danger">{{ form.income_files.errors }}</div>
+    {% endif %}
+  </div>
 
-  <label for="id_notes">Poznámka</label>
-  {{ form.notes }}
-  {% if form.notes.errors %}<small role="alert">{{ form.notes.errors }}</small>{% endif %}
+  <div class="mb-3">
+    <label for="id_notes" class="form-label">Poznámka</label>
+    {{ form.notes }}
+    {% if form.notes.errors %}
+      <div class="text-danger">{{ form.notes.errors }}</div>
+    {% endif %}
+  </div>
 
-  <button type="submit">Nahrát</button>
+  <button type="submit" class="btn btn-primary">Nahrát</button>
 </form>
 {% endblock %}

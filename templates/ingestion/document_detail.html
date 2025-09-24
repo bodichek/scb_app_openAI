@@ -1,37 +1,35 @@
-{% extends 'base.html' %}
-{% block title %}Document {{ doc.id }}{% endblock %}
-{% block content %}
-<h2>Document: {{ doc.original_filename }}</h2>
-<p>Typ: <strong>{{ doc.get_doc_type_display }}</strong></p>
-<p>Rok: <strong>{{ doc.year }}</strong></p>
-<p>Nahráno: {{ doc.uploaded_at }}</p>
-<p>Poznámka: {{ doc.notes|default:"-" }}</p>
+{% extends "base.html" %}
+{% block title %}Detail dokumentu{% endblock %}
 
-<h3>Extracted Tables</h3>
-<table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Page</th>
-      <th>Index</th>
-      <th>Method</th>
-      <th>Columns</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in doc.tables.all %}
-    <tr>
-      <td>{{ t.id }}</td>
-      <td>{{ t.page_number }}</td>
-      <td>{{ t.table_index }}</td>
-      <td>{{ t.method }}</td>
-      <td>{{ t.columns|join:', ' }}</td>
-      <td><a href="{% url 'ingestion:table_detail' t.id %}">Open</a></td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="6">No tables found.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% block content %}
+<h2>📄 Dokument: {{ doc.original_filename }}</h2>
+
+<p><strong>Typ:</strong> {{ doc.doc_type }}</p>
+<p><strong>Rok:</strong> {{ doc.year }}</p>
+<p><strong>Poznámka:</strong> {{ doc.notes|default:"-" }}</p>
+<p><strong>Nahráno:</strong> {{ doc.uploaded_at|date:"d.m.Y H:i" }}</p>
+
+<!-- Tlačítko pro smazání dokumentu -->
+<a href="{% url 'ingestion:delete_document' doc.id %}" class="btn btn-danger mb-4">Smazat dokument</a>
+
+<h3>Tabulky</h3>
+{% if doc.tables.all %}
+<ul class="list-group">
+  {% for table in doc.tables.all %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <div>
+      <a href="{% url 'ingestion:table_detail' table.id %}">
+        Strana {{ table.page_number }} – Tabulka {{ table.table_index }} ({{ table.method }})
+      </a>
+      – {{ table.meta.rows }} řádků
+    </div>
+    <div>
+      <a href="{% url 'ingestion:delete_table' table.id %}" class="btn btn-sm btn-outline-danger">Smazat</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>Žádné tabulky nebyly rozpoznány.</p>
+{% endif %}
 {% endblock %}

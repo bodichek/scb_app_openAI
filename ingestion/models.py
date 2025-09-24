@@ -2,6 +2,10 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
+import os
+
 
 def upload_to_document(instance: "Document", filename: str) -> str:
     user_part = f"user_{instance.owner_id or 'anon'}"
@@ -54,3 +58,12 @@ class ExtractedRow(models.Model):
 
     def __str__(self) -> str:
         return f"Row for {self.table_id}"
+
+@receiver(post_delete, sender=Document)
+def delete_document_file(sender, instance, **kwargs):
+    """Při smazání Document smaže i soubor z disku."""
+    if instance.file and os.path.isfile(instance.file.path):
+        try:
+            os.remove(instance.file.path)
+        except Exception:
+            pass
