@@ -19,6 +19,8 @@ class Document(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="documents",
+        null=True,
+        blank=True,
     )
     file = models.FileField(upload_to=upload_to_document)
     original_filename = models.CharField(max_length=255)
@@ -26,10 +28,9 @@ class Document(models.Model):
     notes = models.TextField(blank=True, null=True)
 
     # Nová pole dle požadavku
-    doc_type = models.CharField(max_length=20, choices=DocType.choices)
-    year = models.PositiveSmallIntegerField()
-    statement_date = models.DateField(help_text=_("Datum výkazu"))
-
+    doc_type = models.CharField(max_length=20, choices=DocType.choices, null=True, blank=True)
+    year = models.PositiveSmallIntegerField(null=True, blank=True)
+    
     def __str__(self) -> str:
         return f"{self.original_filename} ({self.get_doc_type_display()} {self.year})"
 

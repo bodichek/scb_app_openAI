@@ -125,7 +125,6 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
         form = MultiUploadForm(request.POST, request.FILES)
         if form.is_valid():
             year = int(form.cleaned_data["year"])
-            statement_date = form.cleaned_data["statement_date"]
             notes = form.cleaned_data.get("notes")
 
             created_docs = []
@@ -140,7 +139,6 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
                         notes=notes,
                         doc_type=doc_type,
                         year=year,
-                        statement_date=statement_date,
                     )
                     path = doc.file.path
                     candidates = _extract_with_camelot(path) or []

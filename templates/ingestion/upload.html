@@ -5,25 +5,31 @@
 <form action="" method="post" enctype="multipart/form-data">
   {% csrf_token %}
 
+  {% if form.non_field_errors %}
+    <article role="alert">
+      {{ form.non_field_errors }}
+    </article>
+  {% endif %}
+
   <div class="grid">
     <div>
       <label for="id_year">Rok</label>
       {{ form.year }}
-    </div>
-    <div>
-      <label for="id_statement_date">Datum výkazu</label>
-      {{ form.statement_date }}
+      {% if form.year.errors %}<small role="alert">{{ form.year.errors }}</small>{% endif %}
     </div>
   </div>
 
   <label for="id_balance_files">Soubory – Rozvaha</label>
   {{ form.balance_files }}
+  {% if form.balance_files.errors %}<small role="alert">{{ form.balance_files.errors }}</small>{% endif %}
 
   <label for="id_income_files">Soubory – Výsledovka</label>
   {{ form.income_files }}
+  {% if form.income_files.errors %}<small role="alert">{{ form.income_files.errors }}</small>{% endif %}
 
   <label for="id_notes">Poznámka</label>
   {{ form.notes }}
+  {% if form.notes.errors %}<small role="alert">{{ form.notes.errors }}</small>{% endif %}
 
   <button type="submit">Nahrát</button>
 </form>

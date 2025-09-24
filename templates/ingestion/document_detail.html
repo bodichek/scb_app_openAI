@@ -4,7 +4,6 @@
 <h2>Document: {{ doc.original_filename }}</h2>
 <p>Typ: <strong>{{ doc.get_doc_type_display }}</strong></p>
 <p>Rok: <strong>{{ doc.year }}</strong></p>
-<p>Datum výkazu: <strong>{{ doc.statement_date }}</strong></p>
 <p>Nahráno: {{ doc.uploaded_at }}</p>
 <p>Poznámka: {{ doc.notes|default:"-" }}</p>
 

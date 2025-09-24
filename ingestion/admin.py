@@ -4,7 +4,7 @@ from .models import Document, ExtractedTable, ExtractedRow
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ("id", "owner", "original_filename", "doc_type", "year", "statement_date", "uploaded_at")
+    list_display = ("id", "owner", "original_filename", "doc_type", "year", "uploaded_at")
     list_filter = ("doc_type", "year")
     search_fields = ("original_filename",)
 

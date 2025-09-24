@@ -9,8 +9,7 @@
       <th>Soubor</th>
       <th>Typ</th>
       <th>Rok</th>
-      <th>Datum výkazu</th>
-      <th>Nahráno</th>
+            <th>Nahráno</th>
       <th>Akce</th>
     </tr>
   </thead>
@@ -21,8 +20,7 @@
       <td>{{ d.original_filename }}</td>
       <td>{{ d.get_doc_type_display }}</td>
       <td>{{ d.year }}</td>
-      <td>{{ d.statement_date }}</td>
-      <td>{{ d.uploaded_at }}</td>
+            <td>{{ d.uploaded_at }}</td>
       <td><a href="{% url 'ingestion:document_detail' d.id %}">Otevřít</a></td>
     </tr>
     {% empty %}
