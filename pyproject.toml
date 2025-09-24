@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "pdf_tables"
+version = "0.1.0"
+description = "Django PDF table extractor with dashboard"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "scb" }]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+django = "^5.0"
+pandas = "^2.2.2"
+pdfplumber = "^0.11.0"
+Pillow = "^10.4.0"
+opencv-python = "^4.10.0.84"
+camelot-py = "0.10.1"
+[tool.poetry.group.dev.dependencies]
+black = "^24.3.0"
+isort = "^5.13.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

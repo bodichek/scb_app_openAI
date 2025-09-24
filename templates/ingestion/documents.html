@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Documents{% endblock %}
+{% block content %}
+<h2>Documents</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Filename</th>
+      <th>Uploaded</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in documents %}
+    <tr>
+      <td>{{ d.id }}</td>
+      <td>{{ d.original_filename }}</td>
+      <td>{{ d.uploaded_at }}</td>
+      <td><a href="{% url 'ingestion:document_detail' d.id %}">View</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">No documents yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

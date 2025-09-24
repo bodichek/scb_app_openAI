@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}PDF Tables{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    .container { max-width: 1100px; margin: 2rem auto; }
+    table thead th { position: sticky; top: 0; background: #f5f5f5; }
+    pre { white-space: pre-wrap; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="container">
+    <ul>
+      <li><strong>PDF Tables</strong></li>
+    </ul>
+    <ul>
+      <li><a href="/ingestion/upload/">Upload</a></li>
+      <li><a href="/ingestion/documents/">Documents</a></li>
+      <li><a href="/dashboard/">Dashboard</a></li>
+      <li><a href="/admin/">Admin</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    {% if messages %}
+      {% for message in messages %}
+        <article role="alert">{{ message }}</article>
+      {% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

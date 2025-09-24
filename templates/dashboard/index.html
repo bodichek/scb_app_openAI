@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+<form method="get">
+  <div class="grid">
+    <div>
+      <label>Group by</label>
+      <select name="group_by">
+        <option value="">-- choose --</option>
+        {% for c in known_columns %}
+          <option value="{{ c }}" {% if c == group_by %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Value column</label>
+      <select name="value_col">
+        <option value="">(none)</option>
+        {% for c in known_columns %}
+          <option value="{{ c }}" {% if c == value_col %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Aggregation</label>
+      <select name="agg">
+        <option value="count" {% if agg == 'count' %}selected{% endif %}>count</option>
+        <option value="sum" {% if agg == 'sum' %}selected{% endif %}>sum</option>
+        <option value="avg" {% if agg == 'avg' %}selected{% endif %}>avg</option>
+      </select>
+    </div>
+  </div>
+  <button type="submit">Render</button>
+</form>
+
+{% if chart %}
+  <h3>{{ chart.title }}</h3>
+  <canvas id="chart" height="120"></canvas>
+  <script>
+    const ctx = document.getElementById('chart');
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: {{ chart.labels|safe }},
+        datasets: [{
+          label: '{{ chart.title }}',
+          data: {{ chart.values|safe }},
+          backgroundColor: 'rgba(54, 162, 235, 0.5)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  </script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Document {{ doc.id }}{% endblock %}
+{% block content %}
+<h2>Document: {{ doc.original_filename }}</h2>
+<p>Uploaded: {{ doc.uploaded_at }}</p>
+<p>Notes: {{ doc.notes|default:"-" }}</p>
+
+<h3>Extracted Tables</h3>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Page</th>
+      <th>Index</th>
+      <th>Method</th>
+      <th>Columns</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in doc.tables.all %}
+    <tr>
+      <td>{{ t.id }}</td>
+      <td>{{ t.page_number }}</td>
+      <td>{{ t.table_index }}</td>
+      <td>{{ t.method }}</td>
+      <td>{{ t.columns|join:', ' }}</td>
+      <td><a href="{% url 'ingestion:table_detail' t.id %}">Open</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">No tables found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

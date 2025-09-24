@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Table {{ table.id }}{% endblock %}
+{% block content %}
+<h2>Table {{ table.id }}</h2>
+<p>Document: {{ table.document.original_filename }}</p>
+<p>Page: {{ table.page_number }} | Index: {{ table.table_index }} | Method: {{ table.method }}</p>
+
+<table>
+  <thead>
+    <tr>
+      {% for c in table.columns %}
+        <th>{{ c }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in table.rows.all %}
+      <tr>
+        {% for c in table.columns %}
+          <td>{{ r.data|get_item:c }}</td>
+        {% endfor %}
+      </tr>
+    {% empty %}
+      <tr><td colspan="99">No rows.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
