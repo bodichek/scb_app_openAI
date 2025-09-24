@@ -15,6 +15,7 @@ pdfplumber = "^0.11.0"
 Pillow = "^10.4.0"
 opencv-python = "^4.10.0.84"
 camelot-py = "0.10.1"
+reportlab = "^4.4.4"
 [tool.poetry.group.dev.dependencies]
 black = "^24.3.0"
 isort = "^5.13.2"

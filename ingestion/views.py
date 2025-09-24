@@ -60,17 +60,23 @@ def _drop_empty(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _df_to_rows(df: pd.DataFrame) -> list[dict]:
-    """Převede DataFrame na list řádků (dictů)."""
+    """Převede DataFrame na list řádků (dictů), čísla na int."""
     rows: list[dict] = []
     for _, r in df.iterrows():
         row = {}
         for c in df.columns:
             val = r[c]
-            # Pokud je to Series nebo list → vezmeme první hodnotu
             if isinstance(val, (pd.Series, list)):
                 val = val[0] if len(val) > 0 else None
             if pd.isna(val):
                 val = None
+            else:
+                # 🔢 převod čísel na int
+                try:
+                    num = float(val)
+                    val = int(round(num))
+                except Exception:
+                    pass
             row[str(c)] = val
         rows.append(row)
     return rows
@@ -78,7 +84,7 @@ def _df_to_rows(df: pd.DataFrame) -> list[dict]:
 
 # 🔹 Pomocná funkce pro zpracování jednoho dokumentu
 def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
-    """Uloží Document + tabulky + řádky, vrátí počet tabulek."""
+    """Uloží Document + 1 spojenou tabulku + řádky, vrátí počet tabulek (vždy 1 nebo 0)."""
     doc = Document.objects.create(
         file=pdf_file,
         original_filename=pdf_file.name,
@@ -95,7 +101,7 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     try:
         latt = camelot.read_pdf(path, flavor="lattice", pages="all")
         for i in range(latt.n):
-            tables.append({"df": latt[i].df, "method": "camelot-lattice", "page": latt[i].page})
+            tables.append(pd.DataFrame(latt[i].df))
     except Exception:
         pass
 
@@ -103,7 +109,7 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     try:
         stream = camelot.read_pdf(path, flavor="stream", pages="all")
         for i in range(stream.n):
-            tables.append({"df": stream[i].df, "method": "camelot-stream", "page": stream[i].page})
+            tables.append(pd.DataFrame(stream[i].df))
     except Exception:
         pass
 
@@ -112,34 +118,36 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
         with pdfplumber.open(path) as pdf:
             for pageno, page in enumerate(pdf.pages, start=1):
                 for tb in page.extract_tables() or []:
-                    tables.append({"df": pd.DataFrame(tb), "method": "pdfplumber", "page": pageno})
+                    tables.append(pd.DataFrame(tb))
     except Exception:
         pass
 
-    total = 0
-    for idx, tb in enumerate(tables, start=1):
-        df = pd.DataFrame(tb["df"])
-        df = _clean_headers(df)
-        df = _clean_cells(df)
-        df = _drop_empty(df)
-        if df.empty:
-            continue
+    if not tables:
+        return 0
 
-        table = ExtractedTable.objects.create(
-            document=doc,
-            page_number=tb["page"],
-            table_index=idx,
-            method=tb["method"],
-            columns=list(df.columns),
-            meta={"rows": len(df)}
-        )
+    # 📝 Spojení všech tabulek do jedné
+    merged = pd.concat(tables, ignore_index=True)
 
-        for row in _df_to_rows(df):
-            ExtractedRow.objects.create(table=table, data=row)
+    # Čištění
+    merged = _clean_headers(merged)
+    merged = _clean_cells(merged)
+    merged = _drop_empty(merged)
+    if merged.empty:
+        return 0
 
-        total += 1
+    table = ExtractedTable.objects.create(
+        document=doc,
+        page_number=1,
+        table_index=1,
+        method="merged",
+        columns=list(merged.columns),
+        meta={"rows": len(merged)}
+    )
 
-    return total
+    for row in _df_to_rows(merged):
+        ExtractedRow.objects.create(table=table, data=row)
+
+    return 1
 
 
 # 🔹 Views
@@ -166,7 +174,7 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
                 created_docs += 1
                 total_tables += _process_document(pdf_file, request.user, year, "income", notes)
 
-            messages.success(request, f"Nahráno {created_docs} souborů, extrahováno {total_tables} tabulek.")
+            messages.success(request, f"Nahráno {created_docs} souborů, uložena {total_tables} tabulka.")
             return redirect("ingestion:documents")
     else:
         form = MultiUploadForm()

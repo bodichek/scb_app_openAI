@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h2>📊 Financial Dashboard</h2>
+
+<!-- Tabulka metrik -->
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>Rok</th>
+      <th>Revenue</th>
+      <th>COGS</th>
+      <th>Gross Margin</th>
+      <th>Gross Margin %</th>
+      <th>Overheads</th>
+      <th>Operating Profit</th>
+      <th>Net Profit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for year, values in metrics_by_year.items %}
+    <tr>
+      <td>{{ year }}</td>
+      <td>{{ values.Revenue|floatformat:0 }}</td>
+      <td>{{ values.COGS|floatformat:0 }}</td>
+      <td>{{ values.Gross_Margin|floatformat:0 }}</td>
+      <td>{{ values.Gross_Margin_Pct|floatformat:1 }} %</td>
+      <td>{{ values.Overheads|floatformat:0 }}</td>
+      <td>{{ values.Operating_Profit|floatformat:0 }}</td>
+      <td>{{ values.Net_Profit|floatformat:0 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Tabulka růstu -->
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Rok</th>
+      <th>Revenue Growth %</th>
+      <th>COGS Growth %</th>
+      <th>Overheads Growth %</th>
+      <th>Operating Profit %</th>
+      <th>Net Profit %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for year, growth in growth_by_year.items %}
+    <tr>
+      <td>{{ year }}</td>
+      <td>{{ growth.Revenue_Growth|floatformat:1 }} %</td>
+      <td>{{ growth.COGS_Growth|floatformat:1 }} %</td>
+      <td>{{ growth.Overheads_Growth|floatformat:1 }} %</td>
+      <td>{{ growth.Operating_Profit_Pct|floatformat:1 }} %</td>
+      <td>{{ growth.Net_Profit_Pct|floatformat:1 }} %</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Grafy -->
+<div style="width: 90%; margin: auto;">
+  <canvas id="revenueChart"></canvas>
+  <canvas id="profitChart" style="margin-top:40px;"></canvas>
+  <canvas id="growthChart" style="margin-top:40px;"></canvas>
+</div>
+
+<!-- Export PDF -->
+<form method="post" action="{% url 'dashboard:export_pdf' %}">
+  {% csrf_token %}
+  <input type="hidden" name="charts_data" id="chartsDataInput">
+  <button type="submit" class="btn btn-primary">📑 Export PDF</button>
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const data = {{ chart_data|safe }};
+
+// Graf 1: Revenue vs COGS
+new Chart(document.getElementById("revenueChart"), {
+  type: "bar",
+  data: {
+    labels: data.years,
+    datasets: [
+      { label: "Revenue", data: data.revenue, backgroundColor: "rgba(54,162,235,0.7)" },
+      { label: "COGS", data: data.cogs, backgroundColor: "rgba(255,99,132,0.7)" }
+    ]
+  },
+  options: { plugins: { title: { display: true, text: "Revenue vs COGS" }}, scales: { y: { beginAtZero: true } } }
+});
+
+// Graf 2: Profitability
+new Chart(document.getElementById("profitChart"), {
+  type: "bar",
+  data: {
+    labels: data.years,
+    datasets: [
+      { label: "Gross Margin", data: data.gross_margin, backgroundColor: "rgba(75,192,192,0.7)" },
+      { label: "Net Profit", data: data.net_profit, backgroundColor: "rgba(153,102,255,0.7)" }
+    ]
+  },
+  options: { plugins: { title: { display: true, text: "Gross Margin & Net Profit" }}, scales: { y: { beginAtZero: true } } }
+});
+
+// Graf 3: Growth Trends
+new Chart(document.getElementById("growthChart"), {
+  type: "line",
+  data: {
+    labels: data.years,
+    datasets: [
+      { label: "Revenue Growth %", data: data.revenue_growth, borderColor: "rgba(54,162,235,1)", fill: false },
+      { label: "COGS Growth %", data: data.cogs_growth, borderColor: "rgba(255,99,132,1)", fill: false },
+      { label: "Overheads Growth %", data: data.overheads_growth, borderColor: "rgba(255,206,86,1)", fill: false },
+      { label: "Operating Profit %", data: data.op_profit_pct, borderColor: "rgba(75,192,192,1)", fill: false },
+      { label: "Net Profit %", data: data.net_profit_pct, borderColor: "rgba(153,102,255,1)", fill: false }
+    ]
+  },
+  options: { plugins: { title: { display: true, text: "Growth Trends (%)" }}, scales: { y: { beginAtZero: true } } }
+});
+
+// Před exportem zachytíme grafy
+function captureCharts() {
+  const charts = ["revenueChart", "profitChart", "growthChart"];
+  const images = {};
+  charts.forEach(id => {
+    const canvas = document.getElementById(id);
+    if (canvas) images[id] = canvas.toDataURL("image/png");
+  });
+  document.getElementById("chartsDataInput").value = JSON.stringify(images);
+}
+document.querySelector("form").addEventListener("submit", captureCharts);
+</script>
+{% endblock %}
