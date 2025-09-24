@@ -73,3 +73,7 @@ def index(request):
             "chart": chart,
         },
     )
+
+def dashboard_view(request):
+    # tady můžeš později poslat data do šablony
+    return render(request, "dashboard.html")

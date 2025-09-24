@@ -3,7 +3,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpRequest, HttpResponse
 from django.contrib import messages
 from django.db import transaction
-from .forms import UploadPDFForm
+from django.contrib.auth.decorators import login_required
+from .forms import MultiUploadForm
 from .models import Document, ExtractedTable, ExtractedRow
 
 import io
@@ -117,66 +118,96 @@ def _extract_with_pdfplumber(path: str) -> list[dict]:
     return tables
 
 
+@login_required
 @transaction.atomic
 def upload_pdf(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
-        form = UploadPDFForm(request.POST, request.FILES)
+        form = MultiUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            f = form.cleaned_data["file"]
+            year = int(form.cleaned_data["year"])
+            statement_date = form.cleaned_data["statement_date"]
             notes = form.cleaned_data.get("notes")
-            doc = Document.objects.create(
-                file=f, original_filename=f.name, notes=notes
-            )
-            path = doc.file.path
 
-            candidates = _extract_with_camelot(path)
-            if not candidates:
-                candidates = _extract_with_pdfplumber(path)
+            created_docs = []
 
-            if not candidates:
-                messages.warning(request, "No tables detected in the uploaded PDF.")
-                return redirect("ingestion:document_detail", doc_id=doc.id)
+            def handle_files(files, doc_type: str):
+                nonlocal created_docs
+                for f in files:
+                    doc = Document.objects.create(
+                        owner=request.user,
+                        file=f,
+                        original_filename=f.name,
+                        notes=notes,
+                        doc_type=doc_type,
+                        year=year,
+                        statement_date=statement_date,
+                    )
+                    path = doc.file.path
+                    candidates = _extract_with_camelot(path) or []
+                    if not candidates:
+                        candidates = _extract_with_pdfplumber(path) or []
 
-            for idx, item in enumerate(candidates):
-                raw_df = pd.DataFrame(item["df"]) if not isinstance(item["df"], pd.DataFrame) else item["df"]
-                df = raw_df.copy()
-                df = _clean_headers(df)
-                df = _clean_cells(df)
-                df = _drop_empty(df)
+                    for idx, item in enumerate(candidates):
+                        raw_df = pd.DataFrame(item["df"]) if not isinstance(item["df"], pd.DataFrame) else item["df"]
+                        df = raw_df.copy()
+                        df = _clean_headers(df)
+                        df = _clean_cells(df)
+                        df = _drop_empty(df)
 
-                table = ExtractedTable.objects.create(
-                    document=doc,
-                    page_number=int(item.get("page") or 1),
-                    table_index=idx,
-                    method=item.get("method", "unknown"),
-                    columns=[str(c) for c in df.columns],
-                    meta={"source_rows": int(raw_df.shape[0]), "source_cols": int(raw_df.shape[1])},
-                )
-                rows = _df_to_rows(df)
-                ExtractedRow.objects.bulk_create(
-                    [ExtractedRow(table=table, data=r) for r in rows]
-                )
+                        table = ExtractedTable.objects.create(
+                            document=doc,
+                            page_number=int(item.get("page") or 1),
+                            table_index=idx,
+                            method=item.get("method", "unknown"),
+                            columns=[str(c) for c in df.columns],
+                            meta={"source_rows": int(raw_df.shape[0]), "source_cols": int(raw_df.shape[1])},
+                        )
+                        rows = _df_to_rows(df)
+                        ExtractedRow.objects.bulk_create(
+                            [ExtractedRow(table=table, data=r) for r in rows]
+                        )
 
-            messages.success(request, "PDF uploaded and tables extracted.")
-            return redirect("ingestion:document_detail", doc_id=doc.id)
+                    created_docs.append(doc)
+
+            balance_files = request.FILES.getlist("balance_files")
+            income_files = request.FILES.getlist("income_files")
+
+            if not balance_files and not income_files:
+                messages.warning(request, "Nevybrali jste žádné soubory.")
+                return redirect("ingestion:upload")
+
+            if balance_files:
+                handle_files(balance_files, Document.DocType.BALANCE)
+            if income_files:
+                handle_files(income_files, Document.DocType.INCOME)
+
+            if len(created_docs) == 1:
+                messages.success(request, "Soubor nahrán a tabulky extrahovány.")
+                return redirect("ingestion:document_detail", doc_id=created_docs[0].id)
+            else:
+                messages.success(request, f"Nahráno a zpracováno {len(created_docs)} souborů.")
+                return redirect("ingestion:documents")
         else:
-            messages.error(request, "Invalid form submission.")
+            messages.error(request, "Neplatné hodnoty formuláře.")
     else:
-        form = UploadPDFForm()
+        form = MultiUploadForm()
 
     return render(request, "ingestion/upload.html", {"form": form})
 
 
+@login_required
 def documents(request: HttpRequest) -> HttpResponse:
-    docs = Document.objects.order_by("-uploaded_at")
+    docs = Document.objects.filter(owner=request.user).order_by("-uploaded_at")
     return render(request, "ingestion/documents.html", {"documents": docs})
 
 
+@login_required
 def document_detail(request: HttpRequest, doc_id: int) -> HttpResponse:
-    doc = get_object_or_404(Document, id=doc_id)
+    doc = get_object_or_404(Document, id=doc_id, owner=request.user)
     return render(request, "ingestion/document_detail.html", {"doc": doc})
 
 
+@login_required
 def table_detail(request: HttpRequest, table_id: int) -> HttpResponse:
-    table = get_object_or_404(ExtractedTable, id=table_id)
+    table = get_object_or_404(ExtractedTable, id=table_id, document__owner=request.user)
     return render(request, "ingestion/table_detail.html", {"table": table})

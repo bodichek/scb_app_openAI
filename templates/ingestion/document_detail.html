@@ -2,8 +2,11 @@
 {% block title %}Document {{ doc.id }}{% endblock %}
 {% block content %}
 <h2>Document: {{ doc.original_filename }}</h2>
-<p>Uploaded: {{ doc.uploaded_at }}</p>
-<p>Notes: {{ doc.notes|default:"-" }}</p>
+<p>Typ: <strong>{{ doc.get_doc_type_display }}</strong></p>
+<p>Rok: <strong>{{ doc.year }}</strong></p>
+<p>Datum výkazu: <strong>{{ doc.statement_date }}</strong></p>
+<p>Nahráno: {{ doc.uploaded_at }}</p>
+<p>Poznámka: {{ doc.notes|default:"-" }}</p>
 
 <h3>Extracted Tables</h3>
 <table>

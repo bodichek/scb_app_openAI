@@ -1,14 +1,37 @@
 from django.db import models
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _
+
+
+def upload_to_document(instance: "Document", filename: str) -> str:
+    user_part = f"user_{instance.owner_id or 'anon'}"
+    year_part = str(instance.year or "unknown")
+    type_part = instance.doc_type or "unknown"
+    return f"pdfs/{user_part}/{year_part}/{type_part}/{filename}"
 
 
 class Document(models.Model):
-    file = models.FileField(upload_to="pdfs/")
+    class DocType(models.TextChoices):
+        BALANCE = "balance", _("Rozvaha")
+        INCOME = "income", _("Výsledovka")
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+    file = models.FileField(upload_to=upload_to_document)
     original_filename = models.CharField(max_length=255)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True, null=True)
 
+    # Nová pole dle požadavku
+    doc_type = models.CharField(max_length=20, choices=DocType.choices)
+    year = models.PositiveSmallIntegerField()
+    statement_date = models.DateField(help_text=_("Datum výkazu"))
+
     def __str__(self) -> str:
-        return self.original_filename
+        return f"{self.original_filename} ({self.get_doc_type_display()} {self.year})"
 
 
 class ExtractedTable(models.Model):

@@ -87,3 +87,6 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Redirect unauthenticated users to admin login when a view is login_required
+LOGIN_URL = '/admin/login/'
