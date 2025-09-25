@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'ingestion',
     'dashboard',
+    "widget_tweaks",
 ]
 
 MIDDLEWARE = [

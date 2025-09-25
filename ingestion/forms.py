@@ -1,70 +1,42 @@
 from django import forms
 
-# Nabídka let (2018–2025)
-YEARS = [(str(y), str(y)) for y in range(2018, 2026)]
-
 
 class MultiFileInput(forms.ClearableFileInput):
-    """Widget pro výběr více souborů."""
     allow_multiple_selected = True
-
-    def __init__(self, attrs=None):
-        attrs = attrs or {}
-        attrs["multiple"] = True
-        super().__init__(attrs=attrs)
-
-    def value_from_datadict(self, data, files, name):
-        if not files:
-            return []
-        return files.getlist(name)
-
-
-class MultiFileField(forms.FileField):
-    """Form field pro více souborů najednou."""
-    def clean(self, data, initial=None):
-        if not data:
-            if self.required:
-                raise forms.ValidationError(
-                    self.error_messages["required"], code="required"
-                )
-            return []
-
-        if not isinstance(data, (list, tuple)):
-            data = [data]
-
-        cleaned = []
-        errors = []
-        for item in data:
-            try:
-                cleaned.append(super().clean(item, None))
-            except forms.ValidationError as exc:
-                errors.extend(exc.error_list)
-
-        if errors:
-            raise forms.ValidationError(errors)
-
-        return cleaned
 
 
 class MultiUploadForm(forms.Form):
-    """Formulář pro nahrání více PDF – Rozvahy a Výsledovky."""
-    year = forms.ChoiceField(
-        choices=YEARS,
-        initial=YEARS[-1][0],
-        label="Rok"
+    year = forms.IntegerField(
+        label="Rok",
+        required=True,
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
     )
-    balance_files = MultiFileField(
-        widget=MultiFileInput(),
+
+    balance_files = forms.FileField(
+        label="Soubory – Rozvaha",
         required=False,
-        label="Soubory – Rozvaha"
+        widget=MultiFileInput(attrs={"multiple": True, "class": "form-control"}),
     )
-    income_files = MultiFileField(
-        widget=MultiFileInput(),
+
+    income_files = forms.FileField(
+        label="Soubory – Výsledovka",
         required=False,
-        label="Soubory – Výsledovka"
+        widget=MultiFileInput(attrs={"multiple": True, "class": "form-control"}),
     )
+
     notes = forms.CharField(
+        label="Poznámka",
         required=False,
-        widget=forms.Textarea(attrs={'rows': 2}),
-        label="Poznámka"
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
     )
+
+    def clean_year(self):
+        year = self.cleaned_data.get("year")
+        if year and (year < 1900 or year > 2100):
+            raise forms.ValidationError("Zadejte rok mezi 1900 a 2100.")
+        return year
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # validace necháme na views.py, protože používáme getlist()
+        return cleaned_data

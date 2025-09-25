@@ -2,34 +2,28 @@
 {% block title %}Detail dokumentu{% endblock %}
 
 {% block content %}
-<h2>📄 Dokument: {{ doc.original_filename }}</h2>
+<h2 class="mb-4">📄 Dokument: {{ doc.original_filename }}</h2>
 
-<p><strong>Typ:</strong> {{ doc.doc_type }}</p>
-<p><strong>Rok:</strong> {{ doc.year }}</p>
-<p><strong>Poznámka:</strong> {{ doc.notes|default:"-" }}</p>
-<p><strong>Nahráno:</strong> {{ doc.uploaded_at|date:"d.m.Y H:i" }}</p>
+<ul class="list-group mb-4">
+  <li class="list-group-item"><strong>Typ:</strong> {{ doc.get_doc_type_display }}</li>
+  <li class="list-group-item"><strong>Rok:</strong> {{ doc.year }}</li>
+  <li class="list-group-item"><strong>Nahráno:</strong> {{ doc.uploaded_at|date:"d.m.Y H:i" }}</li>
+  <li class="list-group-item"><strong>Poznámky:</strong> {{ doc.notes|default:"—" }}</li>
+</ul>
 
-<!-- Tlačítko pro smazání dokumentu -->
-<a href="{% url 'ingestion:delete_document' doc.id %}" class="btn btn-danger mb-4">Smazat dokument</a>
-
-<h3>Tabulky</h3>
-{% if doc.tables.all %}
-<ul class="list-group">
-  {% for table in doc.tables.all %}
+<h3>📊 Tabulky</h3>
+<ul class="list-group mb-3">
+  {% for tbl in doc.tables.all %}
   <li class="list-group-item d-flex justify-content-between align-items-center">
-    <div>
-      <a href="{% url 'ingestion:table_detail' table.id %}">
-        Strana {{ table.page_number }} – Tabulka {{ table.table_index }} ({{ table.method }})
-      </a>
-      – {{ table.meta.rows }} řádků
-    </div>
-    <div>
-      <a href="{% url 'ingestion:delete_table' table.id %}" class="btn btn-sm btn-outline-danger">Smazat</a>
-    </div>
+    <a href="{% url 'ingestion:table_detail' tbl.id %}">
+      Tabulka {{ tbl.table_index }} (strana {{ tbl.page_number }}, {{ tbl.method }})
+    </a>
+    <a href="{% url 'ingestion:delete_table' tbl.id %}" class="btn btn-sm btn-danger">🗑️ Smazat</a>
   </li>
+  {% empty %}
+  <li class="list-group-item">Žádné tabulky</li>
   {% endfor %}
 </ul>
-{% else %}
-<p>Žádné tabulky nebyly rozpoznány.</p>
-{% endif %}
+
+<a href="{% url 'ingestion:documents' %}" class="btn btn-secondary">← Zpět</a>
 {% endblock %}

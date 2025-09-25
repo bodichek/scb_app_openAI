@@ -1,13 +1,13 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
-
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 import os
 
 
 def upload_to_document(instance: "Document", filename: str) -> str:
+    """Cesta pro ukládání PDF podle uživatele, roku a typu dokumentu."""
     user_part = f"user_{instance.owner_id or 'anon'}"
     year_part = str(instance.year or "unknown")
     type_part = instance.doc_type or "unknown"
@@ -31,10 +31,9 @@ class Document(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True, null=True)
 
-    # Nová pole dle požadavku
     doc_type = models.CharField(max_length=20, choices=DocType.choices, null=True, blank=True)
     year = models.PositiveSmallIntegerField(null=True, blank=True)
-    
+
     def __str__(self) -> str:
         return f"{self.original_filename} ({self.get_doc_type_display()} {self.year})"
 
@@ -54,10 +53,13 @@ class ExtractedTable(models.Model):
 
 class ExtractedRow(models.Model):
     table = models.ForeignKey(ExtractedTable, on_delete=models.CASCADE, related_name="rows")
-    data = models.JSONField(default=dict)
+    code = models.CharField(max_length=20, db_index=True, null=True, blank=True)  # číslo řádku
+    value = models.FloatField(null=True, blank=True)                              # hodnota aktuálního období
+    raw_data = models.JSONField(default=dict, blank=True)                         # původní řádek (celý z tabulky)
 
     def __str__(self) -> str:
-        return f"Row for {self.table_id}"
+        return f"{self.code}: {self.value}"
+
 
 @receiver(post_delete, sender=Document)
 def delete_document_file(sender, instance, **kwargs):

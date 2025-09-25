@@ -12,7 +12,15 @@ import re
 import camelot
 import pdfplumber
 
+@login_required
+@transaction.atomic
+def upload_pdf(request: HttpRequest) -> HttpResponse:
+    if request.method == "POST":
+        print("DEBUG POST keys:", request.POST.keys())
+        print("DEBUG FILES keys:", request.FILES.keys())
+        print("DEBUG FILES dict:", request.FILES)
 
+        form = MultiUploadForm(request.POST, request.FILES)
 # 🔹 Utility pro čištění tabulek
 def _clean_headers(df: pd.DataFrame) -> pd.DataFrame:
     if all(isinstance(c, int) for c in df.columns):
@@ -66,12 +74,9 @@ def _df_to_rows(df: pd.DataFrame) -> list[dict]:
         row = {}
         for c in df.columns:
             val = r[c]
-            if isinstance(val, (pd.Series, list)):
-                val = val[0] if len(val) > 0 else None
             if pd.isna(val):
                 val = None
             else:
-                # 🔢 převod čísel na int
                 try:
                     num = float(val)
                     val = int(round(num))
@@ -82,7 +87,6 @@ def _df_to_rows(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
-# 🔹 Pomocná funkce pro zpracování jednoho dokumentu
 def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     """Uloží Document + 1 spojenou tabulku + řádky, vrátí počet tabulek (vždy 1 nebo 0)."""
     doc = Document.objects.create(
@@ -97,7 +101,6 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     path = doc.file.path
     tables = []
 
-    # Camelot lattice
     try:
         latt = camelot.read_pdf(path, flavor="lattice", pages="all")
         for i in range(latt.n):
@@ -105,7 +108,6 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     except Exception:
         pass
 
-    # Camelot stream
     try:
         stream = camelot.read_pdf(path, flavor="stream", pages="all")
         for i in range(stream.n):
@@ -113,7 +115,6 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     except Exception:
         pass
 
-    # pdfplumber fallback
     try:
         with pdfplumber.open(path) as pdf:
             for pageno, page in enumerate(pdf.pages, start=1):
@@ -125,10 +126,7 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     if not tables:
         return 0
 
-    # 📝 Spojení všech tabulek do jedné
     merged = pd.concat(tables, ignore_index=True)
-
-    # Čištění
     merged = _clean_headers(merged)
     merged = _clean_cells(merged)
     merged = _drop_empty(merged)
@@ -145,12 +143,17 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
     )
 
     for row in _df_to_rows(merged):
-        ExtractedRow.objects.create(table=table, data=row)
+        code = str(row.get("code") or row.get("číslo_řádku") or "")
+        value = None
+        for k, v in row.items():
+            if isinstance(v, (int, float)):
+                value = v
+                break
+        ExtractedRow.objects.create(table=table, code=code, value=value, raw_data=row)
 
     return 1
 
 
-# 🔹 Views
 @login_required
 @transaction.atomic
 def upload_pdf(request: HttpRequest) -> HttpResponse:
@@ -160,8 +163,9 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
             year = form.cleaned_data.get("year")
             notes = form.cleaned_data.get("notes")
 
-            balance_files = form.cleaned_data.get("balance_files", [])
-            income_files = form.cleaned_data.get("income_files", [])
+            # ⚡ čtení souborů z request.FILES.getlist
+            balance_files = request.FILES.getlist("balance_files")
+            income_files = request.FILES.getlist("income_files")
 
             created_docs = 0
             total_tables = 0

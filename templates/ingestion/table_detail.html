@@ -1,35 +1,34 @@
 {% extends "base.html" %}
-{% load dict_extras %}
 {% block title %}Detail tabulky{% endblock %}
 
 {% block content %}
-<h2>📊 Tabulka z dokumentu</h2>
+<h2 class="mb-4">📊 Tabulka {{ table.table_index }}</h2>
 
 <p>
-  <strong>Strana:</strong> {{ table.page_number }}<br>
-  <strong>Metoda:</strong> {{ table.method }}<br>
-  <strong>Řádků:</strong> {{ table.meta.rows }}
+  <strong>Dokument:</strong> {{ table.document.original_filename }}<br>
+  <strong>Strana:</strong> {{ table.page_number }} | <strong>Metoda:</strong> {{ table.method }}
 </p>
 
-<!-- Tlačítko pro smazání tabulky -->
-<a href="{% url 'ingestion:delete_table' table.id %}" class="btn btn-danger mb-3">Smazat tabulku</a>
-
 <table class="table table-bordered table-sm">
-  <thead>
+  <thead class="table-light">
     <tr>
-      {% for col in table.columns %}
-        <th>{{ col }}</th>
-      {% endfor %}
+      <th>Kód</th>
+      <th>Hodnota</th>
     </tr>
   </thead>
   <tbody>
     {% for row in table.rows.all %}
     <tr>
-      {% for col in table.columns %}
-        <td>{{ row.data|get_item:col }}</td>
-      {% endfor %}
+      <td>{{ row.code }}</td>
+      <td>{{ row.value|floatformat:0 }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="2" class="text-center">Žádné řádky</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+
+<a href="{% url 'ingestion:document_detail' table.document.id %}" class="btn btn-secondary">← Zpět</a>
 {% endblock %}

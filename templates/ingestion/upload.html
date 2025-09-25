@@ -1,45 +1,52 @@
 {% extends "base.html" %}
+{% load widget_tweaks %}
 {% block title %}Nahrát PDF{% endblock %}
 
 {% block content %}
-<h2>Nahrát PDF – Rozvaha a Výsledovka</h2>
+<h2 class="mb-4">📤 Nahrát PDF – Rozvaha a Výsledovka</h2>
 
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
   {{ form.non_field_errors }}
 
+  <!-- Rok -->
   <div class="mb-3">
-    <label for="id_year" class="form-label">Rok</label>
-    {{ form.year }}
-    {% if form.year.errors %}
-      <div class="text-danger">{{ form.year.errors }}</div>
-    {% endif %}
+    <label for="{{ form.year.id_for_label }}" class="form-label">Rok</label>
+    {{ form.year|add_class:"form-control" }}
+    {% for error in form.year.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
   </div>
 
+  <!-- Rozvaha -->
   <div class="mb-3">
-    <label for="id_balance_files" class="form-label">Soubory – Rozvaha</label>
-    {{ form.balance_files }}
-    {% if form.balance_files.errors %}
-      <div class="text-danger">{{ form.balance_files.errors }}</div>
-    {% endif %}
+    <label for="{{ form.balance_files.id_for_label }}" class="form-label">Soubory – Rozvaha</label>
+    {{ form.balance_files|add_class:"form-control" }}
+    {% for error in form.balance_files.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
   </div>
 
+  <!-- Výsledovka -->
   <div class="mb-3">
-    <label for="id_income_files" class="form-label">Soubory – Výsledovka</label>
-    {{ form.income_files }}
-    {% if form.income_files.errors %}
-      <div class="text-danger">{{ form.income_files.errors }}</div>
-    {% endif %}
+    <label for="{{ form.income_files.id_for_label }}" class="form-label">Soubory – Výsledovka</label>
+    {{ form.income_files|add_class:"form-control" }}
+    {% for error in form.income_files.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
   </div>
 
+  <!-- Poznámka -->
   <div class="mb-3">
-    <label for="id_notes" class="form-label">Poznámka</label>
-    {{ form.notes }}
-    {% if form.notes.errors %}
-      <div class="text-danger">{{ form.notes.errors }}</div>
-    {% endif %}
+    <label for="{{ form.notes.id_for_label }}" class="form-label">Poznámka</label>
+    {{ form.notes|add_class:"form-control" }}
+    {% for error in form.notes.errors %}
+      <div class="text-danger">{{ error }}</div>
+    {% endfor %}
   </div>
 
-  <button type="submit" class="btn btn-primary">Nahrát</button>
+  <!-- Tlačítka -->
+  <button type="submit" class="btn btn-primary">📥 Nahrát</button>
+  <a href="{% url 'ingestion:documents' %}" class="btn btn-secondary">Zpět</a>
 </form>
 {% endblock %}
