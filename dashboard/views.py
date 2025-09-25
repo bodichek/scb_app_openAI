@@ -1,177 +1,66 @@
 # dashboard/views.py
+from __future__ import annotations
+
 import io
-from django.shortcuts import render
+from typing import Dict, List, Optional
+
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from ingestion.utils import DERIVED_FORMULAS, sum_codes
+from django.shortcuts import render
+
+# ReportLab – hezký tabulkový export
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
 from ingestion.models import Document, ExtractedRow, FinancialMetric
+from ingestion.utils import DERIVED_FORMULAS
 
-@login_required(login_url="/login/")
-def dashboard(request):
+
+# -----------------------------------------------------------------------------
+# Společný builder kontextu pro profitability i report
+# -----------------------------------------------------------------------------
+def build_profitability_context(request):
     """
-    Hlavní dashboard – vývoj vybraných metrik a rozvaha podle zvoleného roku.
+    Vrátí dictionary se všemi daty pro profitability i report (profit & cash bloky,
+    meziroční růsty a pracovní kapitál).
     """
-    docs = Document.objects.filter(owner=request.user).order_by("year")
-    years = sorted({d.year for d in docs if d.year})
-
-    # --- Vývoj příjmů (Revenue, EBIT, Net Profit) ---
-    tracked_income = ["revenue", "ebit", "net_profit"]
-    income_series = {k: [] for k in tracked_income}
-
-    for y in years:
-        for key in tracked_income:
-            val = FinancialMetric.objects.filter(
-                document__owner=request.user,
-                year=y,
-                derived_key=key,
-                is_derived=True
-            ).first()
-            income_series[key].append(val.value if val else None)
-
-    # --- Rozvaha podle zvoleného roku ---
-    selected_year = request.GET.get("year")
-    if selected_year and selected_year.isdigit():
-        selected_year = int(selected_year)
-    else:
-        selected_year = years[-1] if years else None
-
-    balance_assets, balance_liabilities = [], []
-    if selected_year:
-        metrics = FinancialMetric.objects.filter(
-            document__owner=request.user,
-            year=selected_year,
-            document__doc_type="balance",
-            is_derived=False
-        ).exclude(value__isnull=True)
-
-        for m in metrics:
-            label = (m.label or "").lower()
-            if "aktiv" in label:
-                balance_assets.append({"label": m.label, "value": m.value})
-            elif "pasiv" in label:
-                balance_liabilities.append({"label": m.label, "value": m.value})
-
-    return render(request, "dashboard/index.html", {
-        "years": years,
-        "income_series": income_series,
-        "balance_assets": balance_assets,
-        "balance_liabilities": balance_liabilities,
-        "selected_year": selected_year,
-    })
-
-
-@login_required(login_url="/login/")
-def metrics_dashboard(request):
-    """
-    Detailní dashboard: nahrané dokumenty, extrahované řádky a metriky.
-    Připraví data pro grafy (výnosy a náklady podle roku).
-    """
-    docs = Document.objects.filter(owner=request.user).order_by("-year")
-    rows = ExtractedRow.objects.filter(table__document__owner=request.user)
-    metrics = FinancialMetric.objects.filter(document__owner=request.user)
-
-    # Výnosy podle roku (derived_key místo neexistujícího metric_key)
-    revenue_by_year = {}
-    for m in metrics:
-        if m.derived_key == "revenue":
-            revenue_by_year[m.document.year] = m.value
-
-    # Náklady podle roku
-    costs_by_year = {}
-    for m in metrics:
-        if m.derived_key == "costs":
-            costs_by_year[m.document.year] = m.value
-
-    context = {
-        "documents": docs,
-        "rows": rows,
-        "metrics": metrics,
-        "revenue_by_year": revenue_by_year,
-        "costs_by_year": costs_by_year,
-    }
-
-    return render(request, "dashboard/metrics_dashboard.html", context)
-
-
-@login_required(login_url="/login/")
-def export_pdf(request):
-    """
-    Export všech finančních metrik do PDF.
-    """
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-
-    # Nadpis
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, 800, "Přehled finančních metrik")
-
-    # Načtení metrik
-    metrics = FinancialMetric.objects.filter(document__owner=request.user).order_by("year", "derived_key")
-    y = 760
-    p.setFont("Helvetica", 12)
-    for m in metrics:
-        label = m.label if getattr(m, "label", None) else (m.derived_key or m.code or "metric")
-        p.drawString(100, y, f"{label} ({m.year}): {m.value}")
-        y -= 20
-        if y < 100:
-            p.showPage()
-            p.setFont("Helvetica", 12)
-            y = 800
-
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-
-    return FileResponse(buffer, as_attachment=True, filename="financial_metrics.pdf")
-
-@login_required(login_url="/login/")
-def profitability_dashboard(request):
-    """
-    Profitability Trends + Cash side podle zadané specifikace:
-    - Revenue, COGS, Overheads
-    - Gross Margin (abs), Gross Margin %
-    - Operating Profit (EBIT) (varianta A z bloků)
-    - Net Profit
-    - Meziroční růsty: Revenue/COGS/Overheads Growth %
-    - Cash: Cash from Customers, Cash to Suppliers, Gross Cash Profit, OCF, Net Cash Flow (indikativně)
-    """
-    # --- roky z výsledovek/rozvah
+    # --- roky dostupných výsledovek
     income_docs = Document.objects.filter(owner=request.user, doc_type="income").order_by("year")
-    balance_docs = Document.objects.filter(owner=request.user, doc_type="balance").order_by("year")
-
     years = sorted({d.year for d in income_docs if d.year})
-    if not years:
-        return render(request, "dashboard/profitability.html", {"years": [], "msg": "Nenalezeny výsledovky."})
 
-    # --- načti odvozené (is_derived=True) i základní (is_derived=False) metriky
+    if not years:
+        return {"years": []}
+
+    # Všechny metriky uživatele
     fm = FinancialMetric.objects.filter(document__owner=request.user)
 
-    # Helper: vezmi první hodnotu metriky dle derived_key v daném roce
-    def get_derived(year: int, key: str) -> float | None:
+    # Helpers
+    def get_derived(year: int, key: str) -> Optional[float]:
         x = fm.filter(year=year, is_derived=True, derived_key=key).first()
         return x.value if x else None
 
-    # Z raw kódů (pro fin_income, fin_expense, tax) si raději složíme hodnoty přímo (když by chyběl deriv.)
-    def sum_raw_codes(year: int, codes: list[str]) -> float | None:
+    def sum_raw_codes(year: int, codes: List[str]) -> Optional[float]:
+        if not codes:
+            return None
         vals = fm.filter(year=year, is_derived=False, code__in=codes).values_list("value", flat=True)
         nums = [float(v) for v in vals if v is not None]
         return sum(nums) if nums else None
 
     # --- 1) Základní bloky + výpočty
-    revenue = {}
-    cogs = {}
-    overheads = {}
-    gross_margin = {}
-    gross_margin_pct = {}
-    ebit = {}
-    net_profit = {}
+    revenue: Dict[int, Optional[float]] = {}
+    cogs: Dict[int, Optional[float]] = {}
+    overheads: Dict[int, Optional[float]] = {}
+    gross_margin: Dict[int, Optional[float]] = {}
+    gross_margin_pct: Dict[int, Optional[float]] = {}
+    ebit: Dict[int, Optional[float]] = {}
+    net_profit: Dict[int, Optional[float]] = {}
 
     for y in years:
-        revenue[y]  = get_derived(y, "revenue")
-        cogs[y]     = get_derived(y, "cogs")
-        overheads[y]= get_derived(y, "overheads")
+        revenue[y] = get_derived(y, "revenue")
+        cogs[y] = get_derived(y, "cogs")
+        overheads[y] = get_derived(y, "overheads")
 
         gm = (revenue[y] - cogs[y]) if (revenue[y] is not None and cogs[y] is not None) else None
         gross_margin[y] = gm
@@ -185,52 +74,45 @@ def profitability_dashboard(request):
         fin_expense_codes = DERIVED_FORMULAS["income"].get("fin_expense", [])
         tax_codes = DERIVED_FORMULAS["income"].get("tax", [])
 
-        fi  = sum_raw_codes(y, fin_income_codes) if fin_income_codes else None
-        fe  = sum_raw_codes(y, fin_expense_codes) if fin_expense_codes else None
-        tax = sum_raw_codes(y, tax_codes) if tax_codes else None
+        fi = sum_raw_codes(y, fin_income_codes) or 0.0
+        fe = sum_raw_codes(y, fin_expense_codes) or 0.0
+        tax = sum_raw_codes(y, tax_codes) or 0.0
 
-        ebt = (ebit[y] + (fi or 0) - (fe or 0)) if (ebit[y] is not None) else None
-        net_profit[y] = (ebt - (tax or 0)) if (ebt is not None) else None
+        ebt = (ebit[y] + fi - fe) if ebit[y] is not None else None
+        net_profit[y] = (ebt - tax) if ebt is not None else None
 
-    # --- 2) Meziroční růsty
-    def yoy_growth(series: dict[int, float | None]) -> dict[int, float | None]:
-        out = {}
+    # --- 2) Meziroční růsty a maržové ukazatele
+    def yoy_growth(series: Dict[int, Optional[float]]) -> Dict[int, Optional[float]]:
+        out: Dict[int, Optional[float]] = {}
         for i, y in enumerate(years):
             if i == 0:
                 out[y] = None
                 continue
-            prev = years[i-1]
+            prev = years[i - 1]
             if series.get(prev) not in (None, 0) and series.get(y) is not None:
                 out[y] = (series[y] - series[prev]) / series[prev] * 100.0
             else:
                 out[y] = None
         return out
 
-    revenue_growth_pct   = yoy_growth(revenue)
-    cogs_growth_pct      = yoy_growth(cogs)
+    revenue_growth_pct = yoy_growth(revenue)
+    cogs_growth_pct = yoy_growth(cogs)
     overheads_growth_pct = yoy_growth(overheads)
 
-    # --- 3) Profitability ratios
-    operating_profit_pct = {y: (ebit[y] / revenue[y] * 100.0) if (ebit[y] is not None and revenue[y]) else None for y in years}
-    net_profit_pct       = {y: (net_profit[y] / revenue[y] * 100.0) if (net_profit[y] is not None and revenue[y]) else None for y in years}
+    operating_profit_pct = {
+        y: (ebit[y] / revenue[y] * 100.0) if (ebit[y] is not None and revenue[y]) else None for y in years
+    }
+    net_profit_pct = {
+        y: (net_profit[y] / revenue[y] * 100.0) if (net_profit[y] is not None and revenue[y]) else None for y in years
+    }
 
-    # --- 4) Cash approximations (indikativně)
-    # Potřebujeme Δ rozvahových položek: zásoby, pohledávky, závazky (trade)
-    # 4.1 vytáhneme rozvahové řádky z ExtractedRow (sekce nebo fallback dle labelu)
-    def bal_value(year: int, section: str | None, label_contains: str | None) -> float | None:
-        qs = ExtractedRow.objects.filter(table__document__owner=request.user,
-                                         table__document__doc_type="balance",
-                                         table__document__year=year)
-        if section:
-            qs = qs.filter(section=section)
-        if label_contains:
-            qs = qs.filter(label__icontains=label_contains)
-        vals = [r.value for r in qs if r.value is not None]
-        return sum(vals) if vals else None
-
-    # Preferenčně z DERIVED_FORMULAS['balance'] podle kódů:
-    def bal_by_codes(year: int, codes: list[str]) -> float | None:
-        vals = fm.filter(year=year, is_derived=False, code__in=codes, document__doc_type="balance").values_list("value", flat=True)
+    # --- 3) Balance položky (pro cash aproximace)
+    def bal_by_codes(year: int, codes: List[str]) -> Optional[float]:
+        if not codes:
+            return None
+        vals = fm.filter(year=year, is_derived=False, code__in=codes, document__doc_type="balance").values_list(
+            "value", flat=True
+        )
         nums = [float(v) for v in vals if v is not None]
         return sum(nums) if nums else None
 
@@ -238,28 +120,22 @@ def profitability_dashboard(request):
     rec_codes = DERIVED_FORMULAS.get("balance", {}).get("receivables_trade", [])
     pay_codes = DERIVED_FORMULAS.get("balance", {}).get("payables_trade", [])
 
-    inventories = {}
-    receivables = {}
-    payables = {}
+    inventories: Dict[int, Optional[float]] = {}
+    receivables: Dict[int, Optional[float]] = {}
+    payables: Dict[int, Optional[float]] = {}
 
     for y in years:
-        inv = bal_by_codes(y, inv_codes) if inv_codes else None
-        rc  = bal_by_codes(y, rec_codes) if rec_codes else None
-        py  = bal_by_codes(y, pay_codes) if pay_codes else None
+        inventories[y] = bal_by_codes(y, inv_codes)
+        receivables[y] = bal_by_codes(y, rec_codes)
+        payables[y] = bal_by_codes(y, pay_codes)
 
-        # fallback podle labelů, kdyby kódy neseděly
-        inventories[y] = inv if inv is not None else bal_value(y, "asset", "zásob")
-        receivables[y] = rc if rc is not None else bal_value(y, "asset", "pohledávk")
-        payables[y]    = py if py is not None else bal_value(y, "liability", "závazk")
-
-    # ΔX_t = X_t - X_{t-1}
-    def delta(series: dict[int, float | None]) -> dict[int, float | None]:
-        out = {}
+    def delta(series: Dict[int, Optional[float]]) -> Dict[int, Optional[float]]:
+        out: Dict[int, Optional[float]] = {}
         for i, y in enumerate(years):
             if i == 0:
                 out[y] = None
                 continue
-            prev = years[i-1]
+            prev = years[i - 1]
             if series.get(prev) is not None and series.get(y) is not None:
                 out[y] = series[y] - series[prev]
             else:
@@ -268,23 +144,28 @@ def profitability_dashboard(request):
 
     d_inventories = delta(inventories)
     d_receivables = delta(receivables)
-    d_payables    = delta(payables)
+    d_payables = delta(payables)
 
-    # Cash from Customers ≈ Revenue − ΔPohledávky
-    cash_from_customers = {y: (revenue[y] - (d_receivables[y] or 0)) if revenue.get(y) is not None else None for y in years}
+    # Cash aproximace
+    cash_from_customers = {
+        y: (revenue[y] - (d_receivables[y] or 0)) if revenue.get(y) is not None else None for y in years
+    }
+    cash_to_suppliers = {
+        y: (cogs[y] + (d_inventories[y] or 0) - (d_payables[y] or 0)) if cogs.get(y) is not None else None for y in years
+    }
+    gross_cash_profit = {
+        y: (cash_from_customers[y] - cash_to_suppliers[y])
+        if (cash_from_customers.get(y) is not None and cash_to_suppliers.get(y) is not None)
+        else None
+        for y in years
+    }
 
-    # Cash to Suppliers ≈ COGS + ΔZásoby − ΔZávazky
-    cash_to_suppliers   = {y: (cogs[y] + (d_inventories[y] or 0) - (d_payables[y] or 0)) if cogs.get(y) is not None else None for y in years}
-
-    gross_cash_profit   = {y: (cash_from_customers[y] - cash_to_suppliers[y]) if (cash_from_customers.get(y) is not None and cash_to_suppliers.get(y) is not None) else None for y in years}
-
-    # OCF ≈ Net Profit + Depreciation (ř.17) ± ΔWorking Capital (ΔZásoby + ΔPohledávky − ΔKrátkodobé závazky)
-    # Použijeme Depreciation z raw kódu 17 (pokud ho najdeme v FM is_derived=False)
-    def depreciation(year: int) -> float | None:
+    # OCF ≈ Net Profit + Depreciation (ř. 17) ± Δ Working Capital
+    def depreciation(year: int) -> Optional[float]:
         v = fm.filter(year=year, is_derived=False, code="17").values_list("value", flat=True).first()
         return float(v) if v is not None else None
 
-    ocf = {}
+    ocf: Dict[int, Optional[float]] = {}
     for y in years:
         dep = depreciation(y) or 0.0
         wc_delta = ((d_inventories[y] or 0) + (d_receivables[y] or 0) - (d_payables[y] or 0)) if y in d_inventories else None
@@ -293,36 +174,226 @@ def profitability_dashboard(request):
         else:
             ocf[y] = None
 
-    # Net Cash Flow = OCF + CFI + CFF (nemáme-li CFI/CFF, necháme None)
+    # Net Cash Flow – pokud nemáme CFI/CFF, necháme None
     net_cash_flow = {y: None for y in years}
 
-    context = {
+    return {
         "years": years,
-
         "revenue": revenue,
         "cogs": cogs,
         "overheads": overheads,
-
         "gross_margin": gross_margin,
         "gross_margin_pct": gross_margin_pct,
         "ebit": ebit,
         "net_profit": net_profit,
-
         "revenue_growth_pct": revenue_growth_pct,
         "cogs_growth_pct": cogs_growth_pct,
         "overheads_growth_pct": overheads_growth_pct,
-
         "operating_profit_pct": operating_profit_pct,
         "net_profit_pct": net_profit_pct,
-
         "cash_from_customers": cash_from_customers,
         "cash_to_suppliers": cash_to_suppliers,
         "gross_cash_profit": gross_cash_profit,
         "ocf": ocf,
         "net_cash_flow": net_cash_flow,
-
         "inventories": inventories,
         "receivables": receivables,
         "payables": payables,
     }
+
+
+# -----------------------------------------------------------------------------
+# Původní dashboard – přehled + rozvaha dle roku
+# -----------------------------------------------------------------------------
+@login_required(login_url="/login/")
+def dashboard(request):
+    """
+    Hlavní dashboard – vývoj vybraných metrik a rozvaha podle zvoleného roku.
+    """
+    docs = Document.objects.filter(owner=request.user).order_by("year")
+    years = sorted({d.year for d in docs if d.year})
+
+    # --- Vývoj (Revenue, EBIT, Net Profit) přes derived metriky
+    tracked_income = ["revenue", "ebit", "net_profit"]
+    income_series = {k: [] for k in tracked_income}
+
+    for y in years:
+        for key in tracked_income:
+            val = FinancialMetric.objects.filter(
+                document__owner=request.user,
+                year=y,
+                derived_key=key,
+                is_derived=True,
+            ).first()
+            income_series[key].append(val.value if val else None)
+
+    # --- Rozvaha podle zvoleného roku
+    selected_year = request.GET.get("year")
+    if selected_year and selected_year.isdigit():
+        selected_year = int(selected_year)
+    else:
+        selected_year = years[-1] if years else None
+
+    balance_assets, balance_liabilities = [], []
+    if selected_year:
+        metrics = (
+            FinancialMetric.objects.filter(
+                document__owner=request.user, year=selected_year, document__doc_type="balance", is_derived=False
+            )
+            .exclude(value__isnull=True)
+        )
+
+        for m in metrics:
+            label = (m.label or "").lower()
+            if "aktiv" in label:
+                balance_assets.append({"label": m.label, "value": m.value})
+            elif "pasiv" in label:
+                balance_liabilities.append({"label": m.label, "value": m.value})
+
+    return render(
+        request,
+        "dashboard/index.html",
+        {
+            "years": years,
+            "income_series": income_series,
+            "balance_assets": balance_assets,
+            "balance_liabilities": balance_liabilities,
+            "selected_year": selected_year,
+        },
+    )
+
+
+# -----------------------------------------------------------------------------
+# Detail metrik / nahrané tabulky (ponecháno, jen drobná oprava "costs" → "cogs")
+# -----------------------------------------------------------------------------
+@login_required(login_url="/login/")
+def metrics_dashboard(request):
+    """
+    Detailní dashboard: nahrané dokumenty, extrahované řádky a metriky.
+    Připraví data pro grafy (výnosy a náklady podle roku).
+    """
+    docs = Document.objects.filter(owner=request.user).order_by("-year")
+    rows = ExtractedRow.objects.filter(table__document__owner=request.user)
+    metrics = FinancialMetric.objects.filter(document__owner=request.user)
+
+    # Výnosy podle roku
+    revenue_by_year: Dict[int, Optional[float]] = {}
+    for m in metrics:
+        if m.derived_key == "revenue":
+            revenue_by_year[m.document.year] = m.value
+
+    # Náklady (COGS) podle roku – dříve "costs" (neexistovalo)
+    costs_by_year: Dict[int, Optional[float]] = {}
+    for m in metrics:
+        if m.derived_key == "cogs":
+            costs_by_year[m.document.year] = m.value
+
+    context = {
+        "documents": docs,
+        "rows": rows,
+        "metrics": metrics,
+        "revenue_by_year": revenue_by_year,
+        "costs_by_year": costs_by_year,
+    }
+
+    return render(request, "dashboard/metrics_dashboard.html", context)
+
+
+# -----------------------------------------------------------------------------
+# Profitability – nyní jen použije společný context
+# -----------------------------------------------------------------------------
+@login_required(login_url="/login/")
+def profitability_dashboard(request):
+    context = build_profitability_context(request)
+    # Pokud nejsou data, zobraz šablonu s varováním
+    if not context.get("years"):
+        return render(request, "dashboard/profitability.html", {"years": [], "msg": "Nenalezeny výsledovky."})
     return render(request, "dashboard/profitability.html", context)
+
+
+# -----------------------------------------------------------------------------
+# Report view – stejný context, jiná šablona (tabulky + tlačítko exportu)
+# -----------------------------------------------------------------------------
+@login_required(login_url="/login/")
+def report_view(request):
+    context = build_profitability_context(request)
+    return render(request, "dashboard/report.html", context)
+
+
+# -----------------------------------------------------------------------------
+# Export do PDF (Profit vs Cash tabulky)
+# -----------------------------------------------------------------------------
+@login_required(login_url="/login/")
+def export_pdf(request):
+    """
+    Export Profit vs Cash tabulky do PDF (landscape).
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
+    )
+
+    styles = getSampleStyleSheet()
+    elements: List = []
+
+    elements.append(Paragraph("📊 Profit vs Cash Flow Report", styles["Heading1"]))
+    elements.append(Spacer(1, 12))
+
+    years = sorted(
+        set(FinancialMetric.objects.filter(document__owner=request.user).values_list("year", flat=True))
+    )
+    if not years:
+        elements.append(Paragraph("Žádná data nenalezena.", styles["Normal"]))
+        doc.build(elements)
+        buffer.seek(0)
+        return FileResponse(buffer, as_attachment=True, filename="report.pdf")
+
+    # Helper na hodnotu derived metriky
+    def val(year: int, key: str) -> Optional[float]:
+        fm = FinancialMetric.objects.filter(
+            document__owner=request.user, year=year, derived_key=key, is_derived=True
+        ).first()
+        return fm.value if fm else None
+
+    # Profit tabulka
+    profit_rows = [
+        ["Revenue"] + [val(y, "revenue") for y in years],
+        ["COGS"] + [val(y, "cogs") for y in years],
+        ["Gross Margin"] + [val(y, "gross_margin") for y in years],
+        ["Overheads"] + [val(y, "overheads") for y in years],
+        ["EBIT"] + [val(y, "ebit") for y in years],
+        ["Net Profit"] + [val(y, "net_profit") for y in years],
+    ]
+
+    # Cash tabulka
+    cash_rows = [
+        ["Cash from Customers"] + [val(y, "cash_from_customers") for y in years],
+        ["Cash to Suppliers"] + [val(y, "cash_to_suppliers") for y in years],
+        ["Gross Cash Profit"] + [val(y, "gross_cash_profit") for y in years],
+        ["Operating CF"] + [val(y, "ocf") for y in years],
+        ["Net CF"] + [val(y, "net_cash_flow") for y in years],
+    ]
+
+    header = ["Metric"] + [str(y) for y in years]
+    data = [header] + profit_rows + [[""]] + [header] + cash_rows
+
+    table = Table(data, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4a90e2")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                # šedý oddělovač mezi Profit a Cash
+                ("BACKGROUND", (0, len(profit_rows) + 1), (-1, len(profit_rows) + 1), colors.lightgrey),
+            ]
+        )
+    )
+
+    elements.append(table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return FileResponse(buffer, as_attachment=True, filename="profit_cash_report.pdf")

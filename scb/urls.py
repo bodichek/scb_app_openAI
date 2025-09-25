@@ -14,6 +14,11 @@ urlpatterns = [
     # Aplikace
     path("ingestion/", include(("ingestion.urls", "ingestion"), namespace="ingestion")),
     path("dashboard/", include(("dashboard.urls", "dashboard"), namespace="dashboard")),
+    path("survey/", include("survey.urls")),
+    path("suropen/", include("suropen.urls")),  # 🔗 nová appka
+    path("company/", include("company.urls")),
+
+
     
     path("login/", auth_views.LoginView.as_view(template_name="login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(next_page="login"), name="logout"),

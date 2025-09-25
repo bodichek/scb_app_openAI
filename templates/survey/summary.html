@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>📊 Moje vyplněné dotazníky</h2>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Akce</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in submissions %}
+        <tr>
+          <td>{{ s.created_at|date:"d.m.Y H:i" }}</td>
+          <td>
+            <a href="{% url 'survey:detail' s.batch_id %}" class="btn btn-sm btn-primary">
+              Zobrazit detail
+            </a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="2" class="text-muted">Zatím nemáš žádné záznamy.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

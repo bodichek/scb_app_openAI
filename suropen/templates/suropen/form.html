@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">📝 Dotazník – otevřené otázky</h2>
+
+  {% if error %}
+    <div class="alert alert-warning">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="card p-4 shadow-sm">
+    {% csrf_token %}
+
+    {% for block in questions %}
+      <h4 class="mt-3">{{ block.section }}</h4>
+      <hr>
+      {% for q in block.items %}
+        <div class="mb-4">
+          <label class="form-label"><b>{{ q }}</b></label>
+          <textarea
+            class="form-control"
+            name="q-{{ forloop.parentloop.counter0 }}-{{ forloop.counter0 }}"
+            rows="4"
+            placeholder="Tvoje odpověď..."
+          ></textarea>
+        </div>
+      {% endfor %}
+    {% endfor %}
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Odeslat a zanalyzovat AI</button>
+      <a href="{% url 'suropen:history' %}" class="btn btn-outline-secondary">Moje historie</a>
+    </div>
+  </form>
+
+  {% if ai_text %}
+    <div class="card mt-4 p-4 border-success">
+      <h4 class="mb-3">💡 Doporučení od AI</h4>
+      <pre style="white-space:pre-wrap; font-family:inherit;">{{ ai_text }}</pre>
+
+      {% if just_submitted %}
+        <div class="mt-2 text-muted small">Odpověď AI byla uložena k tomuto odeslání.</div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>📋 Detail dotazníku</h2>
+  <p><b>Vyplněno:</b> {{ submission.created_at|date:"d.m.Y H:i" }}</p>
+
+  <ul class="list-group mb-3">
+    {% for r in responses %}
+      <li class="list-group-item d-flex justify-content-between">
+        <span>{{ r.question }}</span>
+        <span class="badge bg-primary">{{ r.score }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <div class="alert alert-info">
+    <b>Průměrné skóre:</b> {{ avg_score|floatformat:1 }}
+  </div>
+
+  <a href="{% url 'survey:summary' %}" class="btn btn-secondary">← Zpět na přehled</a>
+</div>
+{% endblock %}

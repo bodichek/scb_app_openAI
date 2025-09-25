@@ -1,0 +1,28 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content %}
+  <h2>📊 Souhrnné výsledky dotazníku</h2>
+  <table class="admin-summary table table-striped">
+    <thead>
+      <tr>
+        <th>Uživatel</th>
+        <th>Průměrné skóre</th>
+        <th>Poslední vyplnění</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary %}
+        <tr>
+          <td>{{ row.user__username }}</td>
+          <td>{{ row.avg_score|floatformat:2 }}</td>
+          <td>{{ row.last_submit }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3">Zatím žádná data</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {{ block.super }}
+{% endblock %}

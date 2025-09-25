@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">📚 Moje historie odeslání (otevřené otázky)</h2>
+
+  {% if not batches %}
+    <div class="alert alert-info">Zatím nemáš žádné odeslané záznamy.</div>
+  {% else %}
+    {% for b in batches %}
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><b>Batch:</b> {{ b.batch_id }}</span>
+          <span class="text-muted">{{ b.created_at|date:"d.m.Y H:i" }}</span>
+        </div>
+        <div class="card-body">
+          {% if b.ai_response %}
+            <h5 class="mb-2">💡 AI shrnutí</h5>
+            <pre style="white-space:pre-wrap; font-family:inherit;">{{ b.ai_response }}</pre>
+            <hr>
+          {% endif %}
+
+          {% for item in b.items %}
+            <div class="mb-3">
+              <div class="text-uppercase small text-muted">{{ item.section }}</div>
+              <div><b>{{ item.question }}</b></div>
+              <div class="mt-1" style="white-space:pre-wrap;">{{ item.answer }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

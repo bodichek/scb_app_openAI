@@ -4,6 +4,8 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
 
+
+
 def home(request):
     # přihlášeného pošli rovnou na dashboard
     if request.user.is_authenticated:

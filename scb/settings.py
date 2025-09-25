@@ -26,6 +26,9 @@ INSTALLED_APPS = [
     'ingestion',
     'dashboard',
     "widget_tweaks",
+    "suropen",
+    "survey",
+    "company",
 ]
 
 MIDDLEWARE = [

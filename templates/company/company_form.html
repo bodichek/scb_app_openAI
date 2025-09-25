@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0">Formulář pro identifikaci firmy</h4>
+    </div>
+    <div class="card-body">
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        <div class="mb-3">
+          <label for="id_company_name" class="form-label">Název firmy</label>
+          {{ form.company_name }}
+        </div>
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label for="id_respondent_name" class="form-label">Jméno účastníka</label>
+            {{ form.respondent_name }}
+          </div>
+          <div class="col-md-6 mb-3">
+            <label for="id_respondent_email" class="form-label">Email respondenta</label>
+            {{ form.respondent_email }}
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label for="id_phone" class="form-label">Telefonní číslo</label>
+            {{ form.phone }}
+          </div>
+          <div class="col-md-6 mb-3">
+            <label for="id_ico" class="form-label">IČO</label>
+            {{ form.ico }}
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="id_industry" class="form-label">Odvětví</label>
+          {{ form.industry }}
+        </div>
+
+        <div class="mb-3">
+          <label for="id_about" class="form-label">Informace o sobě / poznámka</label>
+          {{ form.about }}
+        </div>
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label for="id_company_size" class="form-label">Velikost firmy</label>
+            {{ form.company_size }}
+          </div>
+          <div class="col-md-6 mb-3">
+            <label for="id_coach" class="form-label">Kouč</label>
+            {{ form.coach }}
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-success">Uložit</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

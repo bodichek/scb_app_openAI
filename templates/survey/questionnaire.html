@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">📋 Dotazník (slider)</h2>
+
+  <form method="post" class="card p-4 shadow-sm">
+    {% csrf_token %}
+    {% for q in questions %}
+      <div class="mb-5">
+        <label class="form-label"><b>{{ q.category }}:</b> {{ q.question }}</label>
+
+        <!-- Popisky odpovědí -->
+        <div class="row text-center small text-muted mb-2">
+          {% for range, label in q.labels.items %}
+            <div class="col">
+              <b>{{ range }}</b><br>
+              <span style="font-size: 0.85rem;">{{ label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- Slider s hodnotou vpravo -->
+        <div class="d-flex align-items-center">
+          <input type="range" min="1" max="10" value="5" 
+                 class="form-range flex-grow-1 me-3 slider-control thick-slider"
+                 name="q{{ forloop.counter0 }}" id="q{{ forloop.counter0 }}"
+                 oninput="updateValue({{ forloop.counter0 }}, this.value)">
+          <span class="badge bg-warning" id="val{{ forloop.counter0 }}">5</span>
+        </div>
+      </div>
+    {% endfor %}
+
+    <button type="submit" class="btn btn-primary">Odeslat</button>
+  </form>
+
+  {% if results %}
+    <div class="card mt-4 p-3">
+      <h4>Výsledky</h4>
+      <ul>
+        {% for a in results.answers %}
+          <li>{{ a.question }} → <b>{{ a.score }}</b></li>
+        {% endfor %}
+      </ul>
+      <p><b>Celkové skóre:</b> {{ results.total }}</p>
+      <p><b>Průměr:</b> {{ results.avg }}</p>
+
+      <!-- Progress bar -->
+      <div class="progress mt-3" style="height: 30px;">
+        <div class="progress-bar bg-success" role="progressbar" 
+             style="width: {{ results.avg|floatformat:0 }}0%;" 
+             aria-valuenow="{{ results.avg }}" aria-valuemin="0" aria-valuemax="10">
+          {{ results.avg }}/10
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Skripty -->
+<script>
+function updateValue(index, value) {
+    const badge = document.getElementById('val' + index);
+    badge.innerText = value;
+
+    badge.classList.remove("bg-danger", "bg-warning", "bg-success");
+
+    if (value <= 3) {
+        badge.classList.add("bg-danger");
+    } else if (value <= 6) {
+        badge.classList.add("bg-warning");
+    } else {
+        badge.classList.add("bg-success");
+    }
+}
+
+// umožní posouvání slideru kolečkem myši
+document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll(".slider-control").forEach(function(slider, index) {
+        slider.addEventListener("wheel", function(e) {
+            e.preventDefault();
+            let step = (e.deltaY < 0) ? 1 : -1;
+            let newValue = parseInt(slider.value) + step;
+
+            if (newValue >= slider.min && newValue <= slider.max) {
+                slider.value = newValue;
+                updateValue(index, newValue);
+            }
+        });
+    });
+});
+</script>
+
+<!-- CSS přímo ve stránce nebo do styles.css -->
+<style>
+/* 🔹 Tlustší slider */
+.thick-slider {
+    height: 1.5rem;
+}
+
+/* Firefox */
+.thick-slider::-moz-range-track {
+    height: 12px;
+}
+.thick-slider::-moz-range-thumb {
+    height: 24px;
+    width: 24px;
+}
+
+/* Chrome, Edge, Safari */
+.thick-slider::-webkit-slider-runnable-track {
+    height: 12px;
+}
+.thick-slider::-webkit-slider-thumb {
+    height: 24px;
+    width: 24px;
+    margin-top: -6px;
+}
+</style>
+{% endblock %}
