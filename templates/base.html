@@ -28,6 +28,11 @@
             <a class="nav-link" href="{% url 'dashboard:dashboard' %}">Dashboard</a>
           </li>
 
+           <!-- Upload PDF -->
+          <li class="nav-item">
+             <a class="nav-link" href="{% url 'ingestion:upload_pdf' %}">📂 Nahrát PDF</a>
+          </li>
+
           <!-- Survey -->
           <li class="nav-item">
             <a class="nav-link" href="{% url 'survey:questionnaire' %}">Dotazník</a>
@@ -65,7 +70,11 @@
               <span class="navbar-text text-light me-2">👤 {{ user.username }}</span>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'logout' %}">Logout</a>
+              <!-- 🔹 Logout přes POST -->
+              <form action="{% url 'logout' %}" method="post" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-link nav-link p-0 m-0" style="display:inline;">Logout</button>
+              </form>
             </li>
           {% else %}
             <li class="nav-item">

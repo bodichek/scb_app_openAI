@@ -1,15 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Registrace{% endblock %}
-
+{% load widget_tweaks %}
 {% block content %}
-<h2>Registrace</h2>
-<form method="post" class="mt-3">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit" class="btn btn-success">Zaregistrovat se</button>
-</form>
-
-<p class="mt-3">
-  Máte už účet? <a href="{% url 'login' %}">Přihlaste se zde</a>.
-</p>
+<div class="d-flex justify-content-center align-items-center" style="min-height:70vh;">
+  <div class="card shadow-lg border-0" style="width: 400px; border-radius: 1rem;">
+    <div class="card-body p-4">
+      <h3 class="text-center mb-4">📝 Registrace</h3>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% for field in form %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">{{ field.label }}</label>
+            {% render_field field class="form-control" placeholder=field.label %}
+            {% if field.errors %}
+              <div class="text-danger small">{{ field.errors|striptags }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success w-100 py-2">Registrovat</button>
+      </form>
+      <hr>
+      <p class="text-center mb-0">
+        Už máte účet?  
+        <a href="{% url 'login' %}" class="fw-semibold">Přihlaste se</a>
+      </p>
+    </div>
+  </div>
+</div>
 {% endblock %}
