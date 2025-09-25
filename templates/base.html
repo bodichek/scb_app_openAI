@@ -15,7 +15,7 @@
   <!-- 🔹 Navigace -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{% url 'dashboard:dashboard' %}">📊 SCB App</a>
+      <a class="navbar-brand" href="{% url 'dashboard:index' %}">📊 SCB App</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
               aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -25,10 +25,15 @@
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
           <!-- Dashboard -->
           <li class="nav-item">
-            <a class="nav-link" href="{% url 'dashboard:dashboard' %}">Dashboard</a>
+            <a class="nav-link" href="{% url 'dashboard:index' %}">Dashboard</a>
           </li>
 
-           <!-- Upload PDF -->
+          <!-- Nahrané hodnoty -->
+          <li class="nav-item">
+            <a class="nav-link" href="{% url 'dashboard:metrics' %}">📑 Nahrané hodnoty</a>
+          </li>
+
+          <!-- Upload PDF -->
           <li class="nav-item">
              <a class="nav-link" href="{% url 'ingestion:upload_pdf' %}">📂 Nahrát PDF</a>
           </li>
@@ -38,12 +43,12 @@
             <a class="nav-link" href="{% url 'survey:questionnaire' %}">Dotazník</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{% url 'survey:summary' %}">Výsledky dotazníku</a>
+            <a class="nav-link" href="{% url 'survey:summary' %}">Výsledky</a>
           </li>
 
           <!-- Company -->
           <li class="nav-item">
-            <a class="nav-link" href="{% url 'company:identification' %}">Company</a>
+            <a class="nav-link" href="{% url 'company:list' %}">Company</a>
           </li>
 
           <!-- Suropen -->
@@ -53,10 +58,10 @@
 
           <!-- Další dashboard sekce -->
           <li class="nav-item">
-            <a class="nav-link" href="{% url 'dashboard:profitability_dashboard' %}">Profitability</a>
+            <a class="nav-link" href="{% url 'dashboard:profitability' %}">Profitability</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="{% url 'dashboard:report_view' %}">Report</a>
+            <a class="nav-link" href="{% url 'dashboard:report' %}">Report</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="{% url 'dashboard:export_pdf' %}">Export PDF</a>
@@ -79,6 +84,9 @@
           {% else %}
             <li class="nav-item">
               <a class="nav-link" href="{% url 'login' %}">Login</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'signup' %}">Signup</a>
             </li>
           {% endif %}
         </ul>

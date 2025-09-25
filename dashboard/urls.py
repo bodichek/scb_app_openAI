@@ -5,13 +5,16 @@ app_name = "dashboard"
 
 urlpatterns = [
     # hlavní dashboard
-    path("", views.dashboard, name="dashboard"),
+    path("", views.dashboard, name="index"),  # 👈 sjednoceno na 'index'
+
+    # nahrané hodnoty
+    path("metrics/", views.metrics_dashboard, name="metrics"),
 
     # profitability grafy
-    path("profitability/", views.profitability_dashboard, name="profitability_dashboard"),
+    path("profitability/", views.profitability_dashboard, name="profitability"),
 
     # report
-    path("report/", views.report_view, name="report_view"),
+    path("report/", views.report_view, name="report"),
 
     # export PDF
     path("export-pdf/", views.export_pdf, name="export_pdf"),

@@ -1,4 +1,3 @@
-# scb/urls.py
 from django.contrib import admin
 from django.urls import path, include
 from . import views  # home, signup
@@ -14,12 +13,11 @@ urlpatterns = [
     # Aplikace
     path("ingestion/", include(("ingestion.urls", "ingestion"), namespace="ingestion")),
     path("dashboard/", include(("dashboard.urls", "dashboard"), namespace="dashboard")),
-    path("survey/", include("survey.urls")),
-    path("suropen/", include("suropen.urls")),  # 🔗 nová appka
-    path("company/", include("company.urls")),
+    path("survey/", include(("survey.urls", "survey"), namespace="survey")),
+    path("suropen/", include(("suropen.urls", "suropen"), namespace="suropen")),
+    path("company/", include(("company.urls", "company"), namespace="company")),
 
-
-    
+    # Auth
     path("login/", auth_views.LoginView.as_view(template_name="login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(next_page="/login/"), name="logout"),
 ]

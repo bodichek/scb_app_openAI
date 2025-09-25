@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "suropen",
     "survey",
     "company",
+    
 ]
 
 MIDDLEWARE = [

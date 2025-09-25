@@ -5,7 +5,7 @@ from . import views
 app_name = "ingestion"
 
 urlpatterns = [
-    path("upload/", views.upload_pdf, name="upload_pdf"),
+    path("upload/", views.upload_pdf, name="upload_pdf"),  # ← TADY musí být přesně "upload_pdf"
     path("documents/", views.documents_list, name="documents"),
     path("documents/<int:doc_id>/", views.document_detail, name="document_detail"),
     path("tables/<int:table_id>/", views.table_detail, name="table_detail"),

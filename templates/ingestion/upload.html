@@ -4,12 +4,14 @@
   <h2>Nahrát PDF výkazy</h2>
 
   <form method="POST" action="{% url 'ingestion:upload_pdf' %}" enctype="multipart/form-data">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Nahrát</button>
-</form>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-primary">📂 Nahrát</button>
+  </form>
 
   {% if existing_years %}
-    <p>Už máš nahrané roky: {{ existing_years|join:", " }}</p>
+    <div class="alert alert-info mt-3">
+      Už máš nahrané roky: {{ existing_years|join:", " }}
+    </div>
   {% endif %}
 {% endblock %}

@@ -199,6 +199,20 @@ def build_profitability_context(request):
         "inventories": inventories,
         "receivables": receivables,
         "payables": payables,
+
+        # 🔹 Přidáme „flattened“ listy pro grafy (přímo do šablony)
+        "years_list": years,
+        "revenue_list": [revenue[y] or 0 for y in years],
+        "cogs_list": [cogs[y] or 0 for y in years],
+        "overheads_list": [overheads[y] or 0 for y in years],
+        "gross_margin_list": [gross_margin[y] or 0 for y in years],
+        "ebit_list": [ebit[y] or 0 for y in years],
+        "net_profit_list": [net_profit[y] or 0 for y in years],
+        "cash_from_customers_list": [cash_from_customers[y] or 0 for y in years],
+        "cash_to_suppliers_list": [cash_to_suppliers[y] or 0 for y in years],
+        "gross_cash_profit_list": [gross_cash_profit[y] or 0 for y in years],
+        "ocf_list": [ocf[y] or 0 for y in years],
+        "net_cash_flow_list": [net_cash_flow[y] or 0 for y in years],
     }
 
 
@@ -268,34 +282,28 @@ def dashboard(request):
 # -----------------------------------------------------------------------------
 @login_required(login_url="/login/")
 def metrics_dashboard(request):
-    """
-    Detailní dashboard: nahrané dokumenty, extrahované řádky a metriky.
-    Připraví data pro grafy (výnosy a náklady podle roku).
-    """
     docs = Document.objects.filter(owner=request.user).order_by("-year")
     rows = ExtractedRow.objects.filter(table__document__owner=request.user)
     metrics = FinancialMetric.objects.filter(document__owner=request.user)
 
-    # Výnosy podle roku
-    revenue_by_year: Dict[int, Optional[float]] = {}
+    revenue_by_year = {}
+    costs_by_year = {}
+
     for m in metrics:
         if m.derived_key == "revenue":
             revenue_by_year[m.document.year] = m.value
-
-    # Náklady (COGS) podle roku – dříve "costs" (neexistovalo)
-    costs_by_year: Dict[int, Optional[float]] = {}
-    for m in metrics:
-        if m.derived_key == "cogs":
+        elif m.derived_key == "cogs":
             costs_by_year[m.document.year] = m.value
 
     context = {
         "documents": docs,
-        "rows": rows,
         "metrics": metrics,
-        "revenue_by_year": revenue_by_year,
-        "costs_by_year": costs_by_year,
+        # připravíme čisté listy pro grafy
+        "revenue_years": list(revenue_by_year.keys()),
+        "revenue_values": list(revenue_by_year.values()),
+        "costs_years": list(costs_by_year.keys()),
+        "costs_values": list(costs_by_year.values()),
     }
-
     return render(request, "dashboard/metrics_dashboard.html", context)
 
 
@@ -305,11 +313,37 @@ def metrics_dashboard(request):
 @login_required(login_url="/login/")
 def profitability_dashboard(request):
     context = build_profitability_context(request)
-    # Pokud nejsou data, zobraz šablonu s varováním
-    if not context.get("years"):
-        return render(request, "dashboard/profitability.html", {"years": [], "msg": "Nenalezeny výsledovky."})
-    return render(request, "dashboard/profitability.html", context)
 
+    years = context.get("years", [])
+    # převod dictů {year: val} -> list v pořadí years
+    def as_list(d: dict) -> list:
+        return [d.get(y) for y in years]
+
+    context.update({
+        "years_list": years,
+        "revenue_list": as_list(context.get("revenue", {})),
+        "cogs_list": as_list(context.get("cogs", {})),
+        "overheads_list": as_list(context.get("overheads", {})),
+        "gross_margin_list": as_list(context.get("gross_margin", {})),
+        "gross_margin_pct_list": as_list(context.get("gross_margin_pct", {})),
+        "ebit_list": as_list(context.get("ebit", {})),
+        "net_profit_list": as_list(context.get("net_profit", {})),
+        "revenue_growth_pct_list": as_list(context.get("revenue_growth_pct", {})),
+        "cogs_growth_pct_list": as_list(context.get("cogs_growth_pct", {})),
+        "overheads_growth_pct_list": as_list(context.get("overheads_growth_pct", {})),
+        "operating_profit_pct_list": as_list(context.get("operating_profit_pct", {})),
+        "net_profit_pct_list": as_list(context.get("net_profit_pct", {})),
+        "cash_from_customers_list": as_list(context.get("cash_from_customers", {})),
+        "cash_to_suppliers_list": as_list(context.get("cash_to_suppliers", {})),
+        "gross_cash_profit_list": as_list(context.get("gross_cash_profit", {})),
+        "ocf_list": as_list(context.get("ocf", {})),
+    })
+
+    # pokud nejsou žádná data
+    if not years:
+        return render(request, "dashboard/profitability.html", {"years_list": []})
+
+    return render(request, "dashboard/profitability.html", context)
 
 # -----------------------------------------------------------------------------
 # Report view – stejný context, jiná šablona (tabulky + tlačítko exportu)

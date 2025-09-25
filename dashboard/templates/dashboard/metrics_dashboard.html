@@ -1,74 +1,141 @@
 {% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}📊 Dashboard{% endblock %}
 
 {% block content %}
-<h1>📊 Dashboard</h1>
+<h2 class="mb-4">📊 Financial Metrics Dashboard</h2>
 
-<h2>Dokumenty</h2>
-<ul>
-    {% for doc in documents %}
-        <li>{{ doc.year }} - {{ doc.original_filename }} ({{ doc.doc_type }})</li>
-    {% empty %}
-        <li>Žádné dokumenty</li>
-    {% endfor %}
-</ul>
-
-<h2>Metriky</h2>
-<table border="1">
-    <tr>
-        <th>Dokument</th>
-        <th>Klíč</th>
-        <th>Hodnota</th>
-    </tr>
-    {% for m in metrics %}
-        <tr>
-            <td>{{ m.document.year }}</td>
-            <td>{{ m.metric_key }}</td>
-            <td>{{ m.value }}</td>
-        </tr>
-    {% empty %}
-        <tr><td colspan="3">Žádné metriky</td></tr>
-    {% endfor %}
-</table>
-
-<h2>Graf výnosů podle roku</h2>
-<div>
-    <canvas id="revenueChart"></canvas>
+<!-- 🔹 Dokumenty -->
+<div class="card mb-4 shadow-sm">
+  <div class="card-header bg-dark text-white">📂 Nahrané dokumenty</div>
+  <div class="card-body">
+    {% if documents %}
+      <ul class="list-group">
+        {% for doc in documents %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            {{ doc.year }} – {{ doc.original_filename }} ({{ doc.doc_type }})
+            <a href="{% url 'ingestion:document_detail' doc.id %}" class="btn btn-sm btn-outline-primary">Detail</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted">Žádné dokumenty</p>
+    {% endif %}
+  </div>
 </div>
 
-<h2>Graf nákladů podle roku</h2>
-<div>
-    <canvas id="costsChart"></canvas>
+<!-- 🔹 Filtrace -->
+<div class="card mb-4 shadow-sm">
+  <div class="card-header bg-info text-white">🔎 Filtrace</div>
+  <div class="card-body row g-3">
+    <div class="col-md-4">
+      <label for="docFilter" class="form-label">Filtrovat podle dokumentu:</label>
+      <select id="docFilter" class="form-select">
+        <option value="">Všechny</option>
+        {% for doc in documents %}
+          <option value="{{ doc.id }}">
+            {{ doc.year }} – {{ doc.original_filename }} ({{ doc.doc_type }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label for="searchInput" class="form-label">Hledat v metrikách:</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="Zadej text...">
+    </div>
+  </div>
+</div>
+
+<!-- 🔹 Finanční metriky -->
+<div class="card mb-4 shadow-sm">
+  <div class="card-header bg-success text-white">📑 Finanční metriky</div>
+  <div class="card-body table-responsive">
+    <table class="table table-striped table-bordered align-middle" id="metricsTable">
+      <thead class="table-light">
+        <tr>
+          <th>Rok</th>
+          <th>Dokument</th>
+          <th>Metoda</th>
+          <th>Klíč</th>
+          <th>Hodnota</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in metrics %}
+          <tr data-doc="{{ m.document.id }}">
+            <td>{{ m.document.year }}</td>
+            <td>{{ m.document.original_filename }}</td>
+            <td>{{ m.method|default:"—" }}</td>
+            <td>{{ m.metric_key }}</td>
+            <td>{{ m.value|floatformat:0|intcomma }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-center text-muted">Žádné metriky</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 🔹 Grafy -->
+<div class="card mb-4 shadow-sm">
+  <div class="card-header bg-primary text-white">📈 Grafy</div>
+  <div class="card-body">
+    <canvas id="revenueChart" class="mb-4"></canvas>
+    <canvas id="costsChart" class="mb-4"></canvas>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const revenueCtx = document.getElementById('revenueChart');
-    new Chart(revenueCtx, {
-        type: 'line',
-        data: {
-            labels: {{ revenue_by_year.keys|list|safe }},
-            datasets: [{
-                label: 'Výnosy',
-                data: {{ revenue_by_year.values|list|safe }},
-                borderColor: 'green',
-                fill: false
-            }]
-        }
-    });
+  // Data z backendu
+  const revenueYears = {{ revenue_years|safe }};
+  const revenueValues = {{ revenue_values|safe }};
+  const costsYears = {{ costs_years|safe }};
+  const costsValues = {{ costs_values|safe }};
 
-    const costsCtx = document.getElementById('costsChart');
-    new Chart(costsCtx, {
-        type: 'line',
-        data: {
-            labels: {{ costs_by_year.keys|list|safe }},
-            datasets: [{
-                label: 'Náklady',
-                data: {{ costs_by_year.values|list|safe }},
-                borderColor: 'red',
-                fill: false
-            }]
-        }
+  // Revenue Chart
+  new Chart(document.getElementById("revenueChart"), {
+    type: "line",
+    data: {
+      labels: revenueYears,
+      datasets: [{ label: "Výnosy", data: revenueValues, borderColor: "green", fill: false }]
+    },
+    options: { plugins: { title: { display: true, text: "Vývoj výnosů" }}, scales: { y: { beginAtZero: true } } }
+  });
+
+  // Costs Chart
+  new Chart(document.getElementById("costsChart"), {
+    type: "line",
+    data: {
+      labels: costsYears,
+      datasets: [{ label: "Náklady", data: costsValues, borderColor: "red", fill: false }]
+    },
+    options: { plugins: { title: { display: true, text: "Vývoj nákladů" }}, scales: { y: { beginAtZero: true } } }
+  });
+
+  // Filtrace tabulky metrik
+  const docFilter = document.getElementById("docFilter");
+  const searchInput = document.getElementById("searchInput");
+
+  function filterTable() {
+    const doc = docFilter.value;
+    const search = searchInput.value.toLowerCase();
+
+    document.querySelectorAll("#metricsTable tbody tr").forEach(row => {
+      const rowDoc = row.getAttribute("data-doc");
+      const rowText = row.innerText.toLowerCase();
+
+      if ((doc === "" || rowDoc === doc) && (search === "" || rowText.includes(search))) {
+        row.style.display = "";
+      } else {
+        row.style.display = "none";
+      }
     });
+  }
+
+  docFilter.addEventListener("change", filterTable);
+  searchInput.addEventListener("keyup", filterTable);
 </script>
-
 {% endblock %}

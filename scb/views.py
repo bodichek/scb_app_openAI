@@ -1,21 +1,15 @@
-# scb/views.py
 from django.shortcuts import redirect, render
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
 
 
-
 def home(request):
     # přihlášeného pošli rovnou na dashboard
     if request.user.is_authenticated:
-        return redirect("dashboard:index")
+        return redirect("dashboard:index")  # ✅ sjednoceno
     return render(request, "home.html")
 
-from django.shortcuts import render, redirect
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth import login
-from django.contrib import messages
 
 def signup(request):
     if request.method == "POST":
@@ -29,11 +23,12 @@ def signup(request):
             user.save()
             login(request, user)
             messages.success(request, "Účet byl úspěšně vytvořen 🎉")
-            return redirect("dashboard:dashboard")  # ✅ OPRAVA
+            return redirect("dashboard:index")  # ✅ sjednoceno
         messages.error(request, "Oprav prosím chyby ve formuláři.")
     else:
         form = UserCreationForm()
     return render(request, "signup.html", {"form": form})
+
 
 def signup_view(request):
     if request.method == "POST":
@@ -41,7 +36,7 @@ def signup_view(request):
         if form.is_valid():
             user = form.save()
             login(request, user)  # rovnou přihlásíme
-            return redirect("dashboard:dashboard")
+            return redirect("dashboard:index")  # ✅ sjednoceno
     else:
         form = UserCreationForm()
     return render(request, "signup.html", {"form": form})
