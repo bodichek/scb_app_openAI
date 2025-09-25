@@ -12,6 +12,16 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+<!-- Debug výpis -->
+<pre>
+YEARS = {{ years|tojson|safe }}
+Revenue = {{ revenue|tojson|safe }}
+COGS = {{ cogs|tojson|safe }}
+Gross Margin = {{ gross_margin|tojson|safe }}
+EBIT = {{ ebit|tojson|safe }}
+Net Profit = {{ net_profit|tojson|safe }}
+</pre>
+
 <div class="row g-4">
   <div class="col-12">
     <h4>Revenue vs COGS vs Overheads</h4>
@@ -19,54 +29,49 @@
   </div>
 
   <div class="col-12">
-    <h4>Gross Margin (abs) + EBIT + Net Profit</h4>
+    <h4>Gross Margin + EBIT + Net Profit</h4>
     <canvas id="profitBlocks"></canvas>
   </div>
 
   <div class="col-12">
-    <h4>Margins % (Gross, Operating, Net)</h4>
+    <h4>Margins %</h4>
     <canvas id="marginsPct"></canvas>
   </div>
 
   <div class="col-12">
-    <h4>YoY Growth % (Revenue / COGS / Overheads)</h4>
+    <h4>YoY Growth %</h4>
     <canvas id="yoyGrowth"></canvas>
   </div>
 
   <div class="col-12">
-    <h4>Cash Side (indicative)</h4>
+    <h4>Cash Side</h4>
     <canvas id="cashSide"></canvas>
   </div>
 </div>
 
 <script>
-  // ✅ Data z Django → validní JSON díky filtru tojson
-  const YEARS = {{ years|tojson }};
-  const revenue   = {{ revenue|tojson }};
-  const cogs      = {{ cogs|tojson }};
-  const overheads = {{ overheads|tojson }};
+  // Data z Django
+  const YEARS = {{ years|tojson|safe }};
+  const revenue   = {{ revenue|tojson|safe }};
+  const cogs      = {{ cogs|tojson|safe }};
+  const overheads = {{ overheads|tojson|safe }};
+  const grossMargin = {{ gross_margin|tojson|safe }};
+  const ebit        = {{ ebit|tojson|safe }};
+  const netProfit   = {{ net_profit|tojson|safe }};
+  const gmPct   = {{ gross_margin_pct|tojson|safe }};
+  const opPct   = {{ operating_profit_pct|tojson|safe }};
+  const npPct   = {{ net_profit_pct|tojson|safe }};
+  const revYoY  = {{ revenue_growth_pct|tojson|safe }};
+  const cogsYoY = {{ cogs_growth_pct|tojson|safe }};
+  const ovhYoY  = {{ overheads_growth_pct|tojson|safe }};
+  const cfc  = {{ cash_from_customers|tojson|safe }};
+  const cts  = {{ cash_to_suppliers|tojson|safe }};
+  const gcp  = {{ gross_cash_profit|tojson|safe }};
+  const ocf  = {{ ocf|tojson|safe }};
 
-  const grossMargin = {{ gross_margin|tojson }};
-  const ebit        = {{ ebit|tojson }};
-  const netProfit   = {{ net_profit|tojson }};
-
-  const gmPct   = {{ gross_margin_pct|tojson }};
-  const opPct   = {{ operating_profit_pct|tojson }};
-  const npPct   = {{ net_profit_pct|tojson }};
-
-  const revYoY  = {{ revenue_growth_pct|tojson }};
-  const cogsYoY = {{ cogs_growth_pct|tojson }};
-  const ovhYoY  = {{ overheads_growth_pct|tojson }};
-
-  const cfc  = {{ cash_from_customers|tojson }};
-  const cts  = {{ cash_to_suppliers|tojson }};
-  const gcp  = {{ gross_cash_profit|tojson }};
-  const ocf  = {{ ocf|tojson }};
-  // const ncf  = {{ net_cash_flow|tojson }};
-
-  // Helper pro převod dict {rok: hodnota} → array v pořadí YEARS
-  function arr(dict) {
-    return YEARS.map(y => dict[String(y)] ?? dict[y] ?? null);
+  // Helper – převede dict {year: value} na pole v pořadí YEARS
+  function values(dict) {
+    return YEARS.map(y => dict[String(y)] ?? null);
   }
 
   // === Grafy ===
@@ -75,9 +80,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Revenue', data: arr(revenue) },
-        { label: 'COGS', data: arr(cogs) },
-        { label: 'Overheads', data: arr(overheads) },
+        { label: 'Revenue', data: values(revenue) },
+        { label: 'COGS', data: values(cogs) },
+        { label: 'Overheads', data: values(overheads) },
       ]
     }
   });
@@ -87,9 +92,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Gross Margin', data: arr(grossMargin) },
-        { label: 'EBIT (Operating Profit)', data: arr(ebit) },
-        { label: 'Net Profit', data: arr(netProfit) },
+        { label: 'Gross Margin', data: values(grossMargin) },
+        { label: 'EBIT', data: values(ebit) },
+        { label: 'Net Profit', data: values(netProfit) },
       ]
     }
   });
@@ -99,9 +104,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Gross Margin %', data: arr(gmPct) },
-        { label: 'Operating Profit %', data: arr(opPct) },
-        { label: 'Net Profit %', data: arr(npPct) },
+        { label: 'Gross Margin %', data: values(gmPct) },
+        { label: 'Operating Profit %', data: values(opPct) },
+        { label: 'Net Profit %', data: values(npPct) },
       ]
     }
   });
@@ -111,9 +116,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Revenue YoY %', data: arr(revYoY) },
-        { label: 'COGS YoY %', data: arr(cogsYoY) },
-        { label: 'Overheads YoY %', data: arr(ovhYoY) },
+        { label: 'Revenue YoY %', data: values(revYoY) },
+        { label: 'COGS YoY %', data: values(cogsYoY) },
+        { label: 'Overheads YoY %', data: values(ovhYoY) },
       ]
     }
   });
@@ -123,10 +128,10 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Cash from Customers', data: arr(cfc) },
-        { label: 'Cash to Suppliers', data: arr(cts) },
-        { label: 'Gross Cash Profit', data: arr(gcp) },
-        { label: 'Operating Cash Flow', data: arr(ocf) },
+        { label: 'Cash from Customers', data: values(cfc) },
+        { label: 'Cash to Suppliers', data: values(cts) },
+        { label: 'Gross Cash Profit', data: values(gcp) },
+        { label: 'Operating Cash Flow', data: values(ocf) },
       ]
     }
   });
