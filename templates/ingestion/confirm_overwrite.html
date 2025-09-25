@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Potvrzení přepsání</h3>
+<p>{{ message }}</p>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="hidden" name="{{ conf_name }}" value="yes">
+  <button class="btn btn-danger" type="submit">Přepsat</button>
+  <a href="{% url 'ingestion:upload_pdf' %}" class="btn btn-secondary">Zpět</a>
+</form>
+{% endblock %}

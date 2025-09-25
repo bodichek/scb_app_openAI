@@ -1,29 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Detail dokumentu{% endblock %}
-
+{% load humanize %}
 {% block content %}
-<h2 class="mb-4">📄 Dokument: {{ doc.original_filename }}</h2>
+<h2>{{ doc.original_filename }} ({{ doc.year }}, {{ doc.get_doc_type_display }})</h2>
 
-<ul class="list-group mb-4">
-  <li class="list-group-item"><strong>Typ:</strong> {{ doc.get_doc_type_display }}</li>
-  <li class="list-group-item"><strong>Rok:</strong> {{ doc.year }}</li>
-  <li class="list-group-item"><strong>Nahráno:</strong> {{ doc.uploaded_at|date:"d.m.Y H:i" }}</li>
-  <li class="list-group-item"><strong>Poznámky:</strong> {{ doc.notes|default:"—" }}</li>
-</ul>
+<p>
+  <a class="btn btn-secondary" href="{% url 'ingestion:documents' %}">← Zpět</a>
+  <a class="btn btn-danger" href="{% url 'ingestion:delete_document' doc.id %}">Smazat dokument</a>
+</p>
 
-<h3>📊 Tabulky</h3>
-<ul class="list-group mb-3">
-  {% for tbl in doc.tables.all %}
-  <li class="list-group-item d-flex justify-content-between align-items-center">
-    <a href="{% url 'ingestion:table_detail' tbl.id %}">
-      Tabulka {{ tbl.table_index }} (strana {{ tbl.page_number }}, {{ tbl.method }})
-    </a>
-    <a href="{% url 'ingestion:delete_table' tbl.id %}" class="btn btn-sm btn-danger">🗑️ Smazat</a>
-  </li>
-  {% empty %}
-  <li class="list-group-item">Žádné tabulky</li>
-  {% endfor %}
-</ul>
+<h4>Normalizovaná data (per kód)</h4>
+<table class="table table-bordered">
+  <thead><tr><th>Kód</th><th>Položka</th><th class="text-end">Hodnota</th></tr></thead>
+  <tbody>
+    {% for m in metrics_base %}
+      <tr>
+        <td>{{ m.code }}</td>
+        <td>{{ m.label }}</td>
+        <td class="text-end">{% if m.value is not None %}{{ m.value|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="3" class="text-center text-muted">Žádná data</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
 
-<a href="{% url 'ingestion:documents' %}" class="btn btn-secondary">← Zpět</a>
+<h4>Dopočítané metriky</h4>
+<table class="table table-bordered">
+  <thead><tr><th>Klíč</th><th class="text-end">Hodnota</th></tr></thead>
+  <tbody>
+    {% for m in metrics_derived %}
+      <tr>
+        <td>{{ m.derived_key }}</td>
+        <td class="text-end">{% if m.value is not None %}{{ m.value|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="2" class="text-center text-muted">Žádné dopočty</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h4>Raw řádky (audit)</h4>
+<table class="table table-sm table-striped">
+  <thead><tr><th>#</th><th>Kód</th><th>Položka</th><th class="text-end">Hodnota</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>{{ r.code }}</td>
+        <td>{{ r.label }}</td>
+        <td class="text-end">{% if r.value is not None %}{{ r.value|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="text-center text-muted">Žádná data</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}

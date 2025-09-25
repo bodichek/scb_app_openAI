@@ -1,16 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Smazat{% endblock %}
-
 {% block content %}
-<h2 class="mb-4">⚠️ Opravdu smazat {{ type }}?</h2>
-
-<div class="alert alert-warning">
-  <strong>{{ object }}</strong>
-</div>
-
+<h3>Opravdu smazat {{ type }}?</h3>
 <form method="post">
   {% csrf_token %}
-  <button type="submit" class="btn btn-danger">🗑️ Ano, smazat</button>
-  <a href="javascript:history.back()" class="btn btn-secondary">Zpět</a>
+  <button class="btn btn-danger" type="submit">Smazat</button>
+  <a class="btn btn-secondary" href="javascript:history.back()">Zrušit</a>
 </form>
 {% endblock %}

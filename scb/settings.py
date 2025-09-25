@@ -9,6 +9,8 @@ DEBUG = True
 
 ALLOWED_HOSTS: list[str] = ["127.0.0.1", "localhost"]
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

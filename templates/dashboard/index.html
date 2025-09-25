@@ -1,65 +1,66 @@
 {% extends "base.html" %}
-{% block title %}Přehled{% endblock %}
-
+{% load static %}
 {% block content %}
-<h2>📋 Základní přehled</h2>
+<h2>📊 Dashboard (BI)</h2>
 
-<!-- Výsledovka -->
-<h4 class="mt-4">Výkaz zisku a ztráty</h4>
-{% if income_statements %}
-<table class="table table-bordered table-sm align-middle">
-  <thead class="table-light">
-    <tr>
-      <th>Rok</th>
-      <th>Revenue</th>
-      <th>Costs (COGS)</th>
-      <th>Net Profit</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for year, values in income_statements.items %}
-    <tr>
-      <td><strong>{{ year }}</strong></td>
-      <td>{{ values.revenue|floatformat:0 }}</td>
-      <td>{{ values.costs|floatformat:0 }}</td>
-      <td>{{ values.profit|floatformat:0 }}</td>
-    </tr>
+<!-- Výběr roku -->
+<form method="get" class="mb-4">
+  <label for="yearSelect"><strong>Vyber rok pro rozvahu:</strong></label>
+  <select name="year" id="yearSelect" class="form-select" style="max-width:200px; display:inline-block;">
+    {% for y in years %}
+      <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
     {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="text-muted">Žádné výsledovky zatím nejsou nahrané.</p>
-{% endif %}
+  </select>
+  <button type="submit" class="btn btn-primary btn-sm">Zobrazit</button>
+</form>
 
-<!-- Rozvaha -->
-<h4 class="mt-4">Rozvaha</h4>
-{% if balance_sheets %}
-<table class="table table-bordered table-sm align-middle">
-  <thead class="table-light">
-    <tr>
-      <th>Rok</th>
-      <th>Assets</th>
-      <th>Liabilities</th>
-      <th>Equity</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for year, values in balance_sheets.items %}
-    <tr>
-      <td><strong>{{ year }}</strong></td>
-      <td>{{ values.assets|floatformat:0 }}</td>
-      <td>{{ values.liabilities|floatformat:0 }}</td>
-      <td>{{ values.equity|floatformat:0 }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="text-muted">Žádné rozvahy zatím nejsou nahrané.</p>
-{% endif %}
+<h3>Vývoj v čase (výsledovka)</h3>
+<canvas id="incomeChart"></canvas>
 
-<!-- Odkaz na detailní dashboard -->
-<div class="mt-4">
-  <a href="{% url 'dashboard:metrics' %}" class="btn btn-primary">📊 Pokročilý dashboard</a>
-</div>
+<h3 class="mt-4">Rozvaha – aktiva ({{ selected_year }})</h3>
+<canvas id="assetsPie"></canvas>
+
+<h3 class="mt-4">Rozvaha – pasiva ({{ selected_year }})</h3>
+<canvas id="liabilitiesPie"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // --- Income line chart ---
+  const years = {{ years|safe }};
+  const revenue = {{ income_series.revenue|safe }};
+  const ebit = {{ income_series.ebit|safe }};
+  const net = {{ income_series.net_profit|safe }};
+
+  new Chart(document.getElementById("incomeChart"), {
+    type: 'line',
+    data: {
+      labels: years,
+      datasets: [
+        { label: "Revenue", data: revenue, borderColor: "blue", fill: false },
+        { label: "EBIT", data: ebit, borderColor: "green", fill: false },
+        { label: "Net Profit", data: net, borderColor: "red", fill: false },
+      ]
+    }
+  });
+
+  // --- Balance pie charts ---
+  const assets = {{ balance_assets|safe }};
+  const liabilities = {{ balance_liabilities|safe }};
+
+  new Chart(document.getElementById("assetsPie"), {
+    type: 'pie',
+    data: {
+      labels: assets.map(a => a.label),
+      datasets: [{ data: assets.map(a => a.value), backgroundColor: ["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f"] }]
+    }
+  });
+
+  new Chart(document.getElementById("liabilitiesPie"), {
+    type: 'pie',
+    data: {
+      labels: liabilities.map(a => a.label),
+      datasets: [{ data: liabilities.map(a => a.value), backgroundColor: ["#edc949","#af7aa1","#ff9da7","#9c755f","#bab0ab"] }]
+    }
+  });
+</script>
 {% endblock %}

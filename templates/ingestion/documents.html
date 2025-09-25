@@ -1,37 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Moje dokumenty{% endblock %}
-
 {% block content %}
-<h2 class="mb-4">📂 Moje dokumenty</h2>
+<h2>Moje dokumenty</h2>
 
-<table class="table table-striped align-middle">
-  <thead class="table-dark">
+<table class="table table-striped">
+  <thead>
     <tr>
-      <th>Název</th>
-      <th>Typ</th>
-      <th>Rok</th>
-      <th>Nahráno</th>
-      <th class="text-end">Akce</th>
+      <th>Soubor</th><th>Rok</th><th>Typ</th><th>Nahráno</th><th></th>
     </tr>
   </thead>
   <tbody>
-    {% for doc in documents %}
-    <tr>
-      <td><a href="{% url 'ingestion:document_detail' doc.id %}">{{ doc.original_filename }}</a></td>
-      <td>{{ doc.get_doc_type_display }}</td>
-      <td>{{ doc.year }}</td>
-      <td>{{ doc.uploaded_at|date:"d.m.Y H:i" }}</td>
-      <td class="text-end">
-        <a href="{% url 'ingestion:delete_document' doc.id %}" class="btn btn-sm btn-danger">🗑️ Smazat</a>
-      </td>
-    </tr>
+    {% for d in documents %}
+      <tr class="{% if d.year in years_map and years_map.d.year.d.doc_type %}table-warning{% endif %}">
+        <td>{{ d.original_filename }}</td>
+        <td>{{ d.year }}</td>
+        <td>{{ d.get_doc_type_display }}</td>
+        <td>{{ d.uploaded_at }}</td>
+        <td>
+          <a class="btn btn-sm btn-primary" href="{% url 'ingestion:document_detail' d.id %}">Detail</a>
+        </td>
+      </tr>
     {% empty %}
-    <tr>
-      <td colspan="5" class="text-center">Žádné dokumenty</td>
-    </tr>
+      <tr><td colspan="5">Žádné dokumenty.</td></tr>
     {% endfor %}
   </tbody>
 </table>
-
-<a href="{% url 'ingestion:upload' %}" class="btn btn-primary">➕ Nahrát nový dokument</a>
 {% endblock %}

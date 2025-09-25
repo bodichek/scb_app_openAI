@@ -1,54 +1,22 @@
 {% extends "base.html" %}
-{% load widget_tweaks %}
-{% block title %}Nahrát PDF{% endblock %}
-
 {% block content %}
-<h2 class="mb-4">📤 Nahrát PDF – Rozvaha a Výsledovka</h2>
+<h2>Nahrát výkazy</h2>
+
+{% if existing_years %}
+  <div class="alert alert-info">
+    Již existují data pro roky: {{ existing_years|join:", " }}.
+  </div>
+{% endif %}
 
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
-  {{ form.non_field_errors }}
+  {{ form.as_p }}
 
-  <!-- Rok -->
-  <div class="mb-3">
-    <label for="{{ form.year.id_for_label }}" class="form-label">Rok</label>
-    {{ form.year|add_class:"form-control" }}
-    {% for error in form.year.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-  </div>
+  {# Overwrite potvrzení (skryté pole doplní view při kolizi) #}
+  {% if conf_name %}
+    <input type="hidden" name="{{ conf_name }}" value="yes">
+  {% endif %}
 
-  <!-- Rozvaha -->
-  <div class="mb-3">
-    <label for="{{ form.balance_files.id_for_label }}" class="form-label">Soubory – Rozvaha</label>
-    {{ form.balance_files }}
-    {% for error in form.balance_files.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-    <small class="form-text text-muted">Můžete vybrat více souborů najednou.</small>
-  </div>
-
-  <!-- Výsledovka -->
-  <div class="mb-3">
-    <label for="{{ form.income_files.id_for_label }}" class="form-label">Soubory – Výsledovka</label>
-    {{ form.income_files }}
-    {% for error in form.income_files.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-    <small class="form-text text-muted">Můžete vybrat více souborů najednou.</small>
-  </div>
-
-  <!-- Poznámka -->
-  <div class="mb-3">
-    <label for="{{ form.notes.id_for_label }}" class="form-label">Poznámka</label>
-    {{ form.notes|add_class:"form-control" }}
-    {% for error in form.notes.errors %}
-      <div class="text-danger">{{ error }}</div>
-    {% endfor %}
-  </div>
-
-  <!-- Tlačítka -->
-  <button type="submit" class="btn btn-primary">📥 Nahrát</button>
-  <a href="{% url 'ingestion:documents' %}" class="btn btn-secondary">Zpět</a>
+  <button class="btn btn-primary" type="submit">Nahrát</button>
 </form>
 {% endblock %}

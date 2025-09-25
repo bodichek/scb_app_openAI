@@ -1,77 +1,42 @@
-import pdfplumber
-from .models import Document, ExtractedTable, ExtractedRow
+from __future__ import annotations
+from typing import Dict, List, Optional
+import unicodedata
 
+# ► V případě potřeby můžeš doplnit aliasy názvů (CZ/EN), ale NEPOUŽÍVÁME je – klíčem je code:
+ALIASES: Dict[str, List[str]] = {
+    # "001": ["dlouhodobý majetek", "non-current assets"],
+    # "002": ["krátkodobý majetek", "current assets"],
+    # ...
+}
 
-def detect_code_column(rows, sample_size=10):
-    """Najde sloupec, kde je nejvíc čísel typu 001, 002, …"""
-    sample = rows[:sample_size]
-    best_col, best_score = None, 0
-    for col_idx in range(len(sample[0])):
-        numeric_like = sum(
-            1 for r in sample if str(r[col_idx]).strip().isdigit()
-        )
-        if numeric_like > best_score:
-            best_score = numeric_like
-            best_col = col_idx
-    return best_col
+def normalize_text(s: str) -> str:
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").strip().lower()
 
+# ► Mapa dopočítaných metrik pro income/balance – zde nastavíš, z jakých kódů se počítají.
+#   Můžeš rozdělit dle typů výkazů nebo variant formulářů (full/short).
+DERIVED_FORMULAS: Dict[str, Dict[str, List[str]]] = {
+    # Příklad pro výsledovku (income) – NASTAV SI DLE VLASTNÍCH ŘÁDKŮ:
+    # revenue = součet kódů, které u vás reprezentují tržby/výnosy
+    "income": {
+        "revenue": ["001", "002"],     # např. 001 Tržby z prodeje výrobků a služeb, 002 Tržby za zboží
+        "cogs":    ["003", "004"],     # spotřeba materiálu, prodané zboží
+        "overheads": ["005","006","007"],  # služby, osobní náklady, odpisy...
+        # Derived: gross_margin = revenue - cogs; ebit = gross_margin - overheads; net_profit = z konkrétního kódu
+        # net_profit lze mapovat přímo, např. "net_profit": ["999"]
+        "net_profit": ["999"],  # pokud máš řádek pro čistý zisk/ztrátu
+    },
+    # Příklad pro rozvahu (balance) – NASTAV SI:
+    "balance": {
+        # příklady:
+        "total_assets": ["001","002","003"],   # aktiva celkem (pokud není přímo řádek „Aktiva celkem“)
+        "total_equity": ["100","101","102"],   # vlastní kapitál...
+        "total_liabilities": ["200","201"],    # cizí zdroje...
+    }
+}
 
-def detect_value_column(rows, code_col, sample_size=10):
-    """Najde první číselný sloupec vpravo od code (aktuální období)."""
-    sample = rows[:sample_size]
-    for col_idx in range(code_col + 1, len(sample[0])):
-        numeric_like = 0
-        for r in sample:
-            val = str(r[col_idx]).replace(" ", "").replace(",", ".")
-            if val.replace(".", "", 1).isdigit():
-                numeric_like += 1
-        if numeric_like >= len(sample) // 2:
-            return col_idx
-    return None
-
-
-def normalize_row(row, code_col, value_col):
-    """Vrátí normalizovaný řádek: code, value a raw_data."""
-    code = str(row[code_col]).strip() if row[code_col] else None
-    value = None
-    if value_col is not None and value_col < len(row):
-        try:
-            value = float(str(row[value_col]).replace(",", ".").replace(" ", ""))
-        except (ValueError, TypeError):
-            pass
-    return {"code": code, "value": value, "raw_data": row}
-
-
-def process_table(rows, extracted_table):
-    """Projede tabulku, detekuje sloupce a uloží řádky do DB."""
-    if not rows:
-        return
-
-    code_col = detect_code_column(rows)
-    value_col = detect_value_column(rows, code_col)
-
-    for row in rows[1:]:  # přeskočíme hlavičku
-        norm = normalize_row(row, code_col, value_col)
-        if norm["code"] and norm["value"] is not None:
-            ExtractedRow.objects.create(
-                table=extracted_table,
-                code=norm["code"],
-                value=norm["value"],
-                raw_data={f"col{i}": str(cell) for i, cell in enumerate(row)},
-            )
-
-
-def extract_pdf_tables(document: Document):
-    """Hlavní funkce – načte PDF, projde tabulky a uloží je do DB."""
-    with pdfplumber.open(document.file.path) as pdf:
-        for page in pdf.pages:
-            tables = page.extract_tables()
-            for idx, tbl in enumerate(tables):
-                extracted_table = ExtractedTable.objects.create(
-                    document=document,
-                    page_number=page.page_number,
-                    table_index=idx,
-                    method="pdfplumber",
-                    columns=tbl[0] if tbl and tbl[0] else [],
-                )
-                process_table(tbl, extracted_table)
+def sum_codes(code_to_value: Dict[str, float], codes: List[str]) -> Optional[float]:
+    vals = [code_to_value.get(c) for c in codes if c in code_to_value]
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return None
+    return float(sum(vals))

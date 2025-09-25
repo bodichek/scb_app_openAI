@@ -1,50 +1,25 @@
 from django.contrib import admin
-from .models import Document, ExtractedTable, ExtractedRow
-
+from .models import Document, ExtractedTable, ExtractedRow, FinancialMetric
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "original_filename",
-        "doc_type",
-        "year",
-        "owner",
-        "uploaded_at",
-    )
-    list_filter = ("doc_type", "year", "uploaded_at", "owner")
-    search_fields = ("original_filename", "notes", "owner__username")
-    date_hierarchy = "uploaded_at"
-    ordering = ("-uploaded_at",)
-
-
-class ExtractedRowInline(admin.TabularInline):
-    model = ExtractedRow
-    fields = ("code", "value", "section", "raw_data")
-    readonly_fields = ("code", "value", "section", "raw_data")
-    extra = 0
-    show_change_link = True
-
+    list_display = ("id","original_filename","owner","year","doc_type","uploaded_at")
+    list_filter = ("doc_type","year","owner")
+    search_fields = ("original_filename",)
 
 @admin.register(ExtractedTable)
 class ExtractedTableAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "document",
-        "page_number",
-        "table_index",
-        "method",
-        "created_at",
-    )
-    list_filter = ("method", "created_at")
-    search_fields = ("document__original_filename",)
-    inlines = [ExtractedRowInline]
-    ordering = ("-created_at",)
-
+    list_display = ("id","document","method","page_number","table_index","created_at")
+    list_filter = ("method",)
 
 @admin.register(ExtractedRow)
 class ExtractedRowAdmin(admin.ModelAdmin):
-    list_display = ("id", "table", "code", "value", "section", "created_at")
+    list_display = ("id","table","code","label","value","section","created_at")
     list_filter = ("section",)
-    search_fields = ("code", "value", "section")
-    ordering = ("code",)
+    search_fields = ("code","label")
+
+@admin.register(FinancialMetric)
+class FinancialMetricAdmin(admin.ModelAdmin):
+    list_display = ("id","document","code","derived_key","value","is_derived","year","created_at")
+    list_filter = ("is_derived","year")
+    search_fields = ("code","derived_key","label")

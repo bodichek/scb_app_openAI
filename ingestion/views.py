@@ -1,269 +1,182 @@
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
-import re
-import unicodedata
+import json
 
-import pandas as pd
+import pdfplumber
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
-# PDF extrakce (fail-safe importy)
-try:
-    import camelot  # type: ignore
-except Exception:
-    camelot = None  # type: ignore
-
-try:
-    import pdfplumber  # type: ignore
-except Exception:
-    pdfplumber = None  # type: ignore
+from openai import OpenAI
 
 from .forms import MultiUploadForm
-from .models import Document, ExtractedRow, ExtractedTable
+from .models import Document, ExtractedTable, ExtractedRow, FinancialMetric
+from .utils import DERIVED_FORMULAS, sum_codes
 
-# ==========================
-# Utility
-# ==========================
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+# -------------------------
+# OpenAI + PDF
+# -------------------------
 
-def _normalize_header(name: Any) -> str:
-    s = str(name if name is not None else "").strip().lower()
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[^a-z0-9 _\-.]", "", s)
-    s = s.replace(" ", "_")
-    return s or "col"
+def extract_text_from_pdf(path: str) -> str:
+    parts: List[str] = []
+    with pdfplumber.open(path) as pdf:
+        for p in pdf.pages:
+            parts.append(p.extract_text() or "")
+    return "\n".join(parts)
 
-def _to_python_scalar(val: Any) -> Any:
+def parse_pdf_with_gpt(pdf_path: str, doc_type: str) -> List[Dict[str, Any]]:
+    """
+    Pošle text PDF do GPT-4o mini a vrátí seznam řádků:
+    {"code": "001", "label": "Tržby ...", "value": 123456.0}
+    """
+    text = extract_text_from_pdf(pdf_path)
+    prompt = f"""
+    From the following Czech financial statement text, extract a JSON array of rows.
+    Each row MUST be an object with keys: "code" (string row number like "001" or "01"),
+    "label" (string item name), "value" (float or null) for the CURRENT period.
+    Return ONLY valid JSON. No explanations.
+
+    Text:
+    {text}
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in Czech financial statements. Output JSON only."},
+            {"role": "user", "content": prompt}
+        ],
+        response_format={"type": "json_object"}
+    )
+
     try:
-        if pd.isna(val):
-            return None
+        data = json.loads(resp.choices[0].message.content)
+        # očekáváme {"rows":[...]} nebo přímo [...]
+        if isinstance(data, dict) and "rows" in data:
+            rows = data["rows"]
+        elif isinstance(data, list):
+            rows = data
+        else:
+            rows = []
     except Exception:
-        pass
-    if hasattr(val, "item"):
+        rows = []
+
+    # sanitace
+    out: List[Dict[str, Any]] = []
+    for r in rows or []:
+        code = str(r.get("code") or "").strip()
+        label = str(r.get("label") or "").strip()
+        val = r.get("value")
         try:
-            return val.item()
+            val = float(val) if val is not None else None
         except Exception:
-            return str(val)
-    if isinstance(val, (pd.Series, pd.DataFrame)):
-        return str(val)
-    return val
+            val = None
+        if code or (val is not None):
+            out.append({"code": code, "label": label, "value": val})
+    return out
 
-def _safe_is_number_str(s: str) -> bool:
-    if not isinstance(s, str):
-        return False
-    s2 = s.replace("\u00A0", " ").replace(" ", "").replace(",", ".")
-    return bool(_NUM_RE.fullmatch(s2))
+# -------------------------
+# Normalizace + výpočty
+# -------------------------
 
-def _to_float_if_number(val: Any) -> Optional[float]:
-    v = _to_python_scalar(val)
-    if v is None:
+def rewrite_to_metrics(document: Document) -> None:
+    """
+    Přepíše ExtractedRow -> FinancialMetric (per kód).
+    Nevyužíváme aliasy; klíčem je code.
+    """
+    # smažeme staré normalizované (aby se při přepisu roku neduplikovalo)
+    FinancialMetric.objects.filter(document=document, is_derived=False).delete()
+
+    rows = ExtractedRow.objects.filter(table__document=document)
+    # Pozor: kód může být prázdný – ukládej jen ty, které code aspoň mají NEBO mají value
+    bulk: List[FinancialMetric] = []
+    for r in rows:
+        if not (r.code or r.value is not None):
+            continue
+        bulk.append(FinancialMetric(
+            document=document,
+            code=(r.code or "").strip(),
+            label=(r.label or "").strip(),
+            value=r.value,
+            year=document.year,
+            is_derived=False,
+            derived_key=""
+        ))
+    if bulk:
+        FinancialMetric.objects.bulk_create(bulk, batch_size=100)
+
+def calculate_and_store_derived(document: Document) -> None:
+    """
+    Dopočítané metriky (uloží se jako is_derived=True).
+    Konfigurace je v DERIVED_FORMULAS (per doc_type).
+    """
+    FinancialMetric.objects.filter(document=document, is_derived=True).delete()
+
+    # Mapa kód -> hodnota (poslední hodnota, když je více stejných kódů)
+    code_map: Dict[str, float] = {}
+    for m in FinancialMetric.objects.filter(document=document, is_derived=False):
+        if m.code:
+            code_map[m.code] = m.value if m.value is not None else code_map.get(m.code, None)
+
+    formulas = DERIVED_FORMULAS.get(document.doc_type, {})
+    derived_bulk: List[FinancialMetric] = []
+
+    # jednoduché sumy dle mapy
+    for key, codes in formulas.items():
+        val = sum_codes(code_map, codes)
+        derived_bulk.append(FinancialMetric(
+            document=document,
+            code="",
+            label=f"Derived {key}",
+            value=val,
+            year=document.year,
+            is_derived=True,
+            derived_key=key
+        ))
+
+    # ukázkové složené metriky – pokud chceš, doplň si logiku nad derived_bulk (např. ebit = revenue - cogs - overheads)
+    # zde příklad: pokud máme revenue a cogs/overheads, dopočítej hrubou marži a EBIT:
+    def _find_val(key: str) -> Optional[float]:
+        for x in derived_bulk:
+            if x.derived_key == key:
+                return x.value
         return None
-    if isinstance(v, (int, float)):
-        try:
-            return float(v)
-        except Exception:
-            return None
-    if isinstance(v, str) and _safe_is_number_str(v):
-        try:
-            return float(v.replace(" ", "").replace(",", "."))
-        except Exception:
-            return None
-    return None
 
-# ==========================
-# Čištění DataFrame
-# ==========================
+    revenue = _find_val("revenue")
+    cogs = _find_val("cogs")
+    overheads = _find_val("overheads")
 
-def _clean_headers(df: pd.DataFrame) -> pd.DataFrame:
-    try:
-        if all(isinstance(c, int) for c in df.columns):
-            header_idx: Optional[int] = None
-            for i, row in df.iterrows():
-                has_nonempty = any(str(x).strip() not in {"", "nan"} for x in row.tolist())
-                if has_nonempty:
-                    header_idx = i
-                    break
-            if header_idx is not None:
-                new_cols = [str(x).strip() for x in df.iloc[header_idx].tolist()]
-                df = df.iloc[header_idx + 1:].reset_index(drop=True)
-                df.columns = new_cols
-    except Exception:
-        pass
-    df.columns = [_normalize_header(c) for c in df.columns]
-    return df
+    gross_margin = (revenue - cogs) if (revenue is not None and cogs is not None) else None
+    ebit = (gross_margin - overheads) if (gross_margin is not None and overheads is not None) else None
 
-def _clean_cells(df: pd.DataFrame) -> pd.DataFrame:
-    def _clean_val(v: Any) -> Any:
-        try:
-            if pd.isna(v):
-                return None
-        except Exception:
-            pass
-        s = str(v).strip()
-        if s in {"", "nan", "-"}:
-            return None
-        s_compact = s.replace("\u00A0", " ").replace(" ", "").replace(",", ".")
-        if _NUM_RE.fullmatch(s_compact):
-            try:
-                return float(s_compact)
-            except Exception:
-                pass
-        return s
-    return df.applymap(_clean_val)
+    derived_bulk.append(FinancialMetric(
+        document=document, code="", label="Derived gross_margin", value=gross_margin,
+        year=document.year, is_derived=True, derived_key="gross_margin"
+    ))
+    derived_bulk.append(FinancialMetric(
+        document=document, code="", label="Derived ebit", value=ebit,
+        year=document.year, is_derived=True, derived_key="ebit"
+    ))
 
-def _drop_empty(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.dropna(axis=0, how="all")
-    df = df.dropna(axis=1, how="all")
-    return df.reset_index(drop=True)
+    if derived_bulk:
+        FinancialMetric.objects.bulk_create(derived_bulk, batch_size=100)
 
-def _df_to_rows(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for _, r in df.iterrows():
-        row: Dict[str, Any] = {}
-        for c in df.columns:
-            row[str(c)] = _to_python_scalar(r[c])
-        rows.append(row)
-    return rows
+# -------------------------
+# Hlavní pipeline
+# -------------------------
 
-# ==========================
-# Heuristiky pro sloupce
-# ==========================
-
-_CODE_HDR_HINTS   = ("cislo_radku", "cislo", "radku", "radek", "c")
-_LABEL_HDR_HINTS  = ("oznaceni", "ozna", "polozka", "poloz", "popis", "text", "nazev", "b")
-_SKIP_VALUE_HDR   = ("korekce", "minule", "minuly", "predchozi")
-_PREFER_VALUE_HDR = ("brutto", "stav", "netto", "bezne", "bezny", "current")
-
-def _column_numeric_ratio(series: pd.Series) -> float:
-    try:
-        vals = series.dropna().astype(str)
-    except Exception:
-        return 0.0
-    if len(vals) == 0:
-        return 0.0
-    isnum = vals.apply(_safe_is_number_str)
-    return float(isnum.sum()) / float(len(vals))
-
-def _find_code_col(df: pd.DataFrame) -> Optional[int]:
-    for i, col in enumerate(df.columns):
-        name = _normalize_header(col)
-        if any(h in name for h in _CODE_HDR_HINTS):
-            return i
-    best_idx: Optional[int] = None
-    best_score: float = 0.0
-    for i in range(len(df.columns)):
-        vals = df.iloc[:, i].dropna().astype(str).str.strip()
-        if len(vals) == 0:
-            continue
-        short_digits = vals.apply(lambda s: s.isdigit() and len(s) <= 4)
-        score = float(short_digits.sum()) / float(len(vals))
-        if score > 0.6 and score > best_score:
-            best_idx, best_score = i, score
-    return best_idx
-
-def _find_label_col(df: pd.DataFrame, code_idx: Optional[int]) -> Optional[int]:
-    """Najdi textový sloupec s názvem položky (label). Preferuj hlavičky dle _LABEL_HDR_HINTS.
-    Pokud nic nesedí, vrať None a použijeme fallback."""
-    best_idx: Optional[int] = None
-    best_pref: int = -1
-    best_ratio: float = 1.0  # nižší = textovější
-
-    for i, col in enumerate(df.columns):
-        if code_idx is not None and i == code_idx:
-            continue
-        ser = df.iloc[:, i]
-        # aspoň něco v tom sloupci musí být
-        try:
-            vals = ser.dropna().astype(str).str.strip()
-        except Exception:
-            continue
-        if len(vals) == 0:
-            continue
-
-        # musí existovat nějaký nenumerický text
-        any_text = any((v and not _safe_is_number_str(v)) for v in vals)
-        if not any_text:
-            continue
-
-        name = _normalize_header(col)
-        pref = 1 if any(h in name for h in _LABEL_HDR_HINTS) else 0
-        ratio = _column_numeric_ratio(ser)
-
-        if (pref > best_pref) or (pref == best_pref and ratio < best_ratio):
-            best_idx, best_pref, best_ratio = i, pref, ratio
-
-    return best_idx
-
-def _find_value_col(df: pd.DataFrame, code_idx: Optional[int]) -> Optional[int]:
-    cols = list(range(len(df.columns)))
-    if code_idx is not None:
-        cols = list(range(code_idx + 1, len(df.columns))) + list(range(0, code_idx + 1))
-
-    best_idx: Optional[int] = None
-    best_score: float = 0.0
-    best_pref: int = -1
-
-    for i in cols:
-        if code_idx is not None and i == code_idx:
-            continue  # ❗ nikdy nevybírej sloupec s kódem jako hodnotu
-        name = str(df.columns[i])
-        nname = _normalize_header(name)
-        if any(k in nname for k in _SKIP_VALUE_HDR):
-            continue
-        ratio = _column_numeric_ratio(df.iloc[:, i])
-        if ratio < 0.5:
-            continue
-        pref = 1 if any(k in nname for k in _PREFER_VALUE_HDR) else 0
-        if (pref > best_pref) or (pref == best_pref and ratio > best_score):
-            best_idx, best_score, best_pref = i, ratio, pref
-
-    return best_idx
-
-# ==========================
-# Sekce (jen pro rozvahu)
-# ==========================
-
-def _norm_text(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    return s.lower()
-
-def _detect_section_from_row(row: Dict[str, Any]) -> Optional[str]:
-    for v in row.values():
-        v = _to_python_scalar(v)
-        if isinstance(v, str):
-            t = _norm_text(v)
-            if "aktiva" in t:
-                return "assets"
-            if "pasiva" in t:
-                return "liabilities"
-    return None
-
-def _normalize_code(raw: Any) -> Optional[str]:
-    raw = _to_python_scalar(raw)
-    if raw is None:
-        return None
-    s = str(raw).strip()
-    if not s:
-        return None
-    m = re.search(r"\d+", s)
-    if not m:
-        return None
-    digits = m.group(0)
-    if len(digits) == 1:
-        digits = digits.zfill(2)
-    return digits
-
-# ==========================
-# Zpracování PDF
-# ==========================
-
-def _process_document(pdf_file, user, year, doc_type: str, notes: Optional[str] = None) -> int:
+def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
+    """
+    1) Vytvoří Document
+    2) Pošle PDF do OpenAI a uloží ExtractedTable + ExtractedRow
+    3) Přepíše na FinancialMetric (per code)
+    4) Dopočítá derived a uloží je
+    """
     doc = Document.objects.create(
         file=pdf_file,
         original_filename=getattr(pdf_file, "name", "upload.pdf"),
@@ -273,128 +186,53 @@ def _process_document(pdf_file, user, year, doc_type: str, notes: Optional[str] 
         notes=notes,
     )
 
-    try:
-        path = doc.file.path  # type: ignore[attr-defined]
-    except Exception:
-        return 0
+    path = doc.file.path
+    rows = parse_pdf_with_gpt(path, doc_type)
 
-    frames: List[pd.DataFrame] = []
-
-    if camelot is not None:
-        try:
-            latt = camelot.read_pdf(path, flavor="lattice", pages="all")
-            for i in range(getattr(latt, "n", 0)):
-                frames.append(pd.DataFrame(latt[i].df))
-        except Exception:
-            pass
-        try:
-            stream = camelot.read_pdf(path, flavor="stream", pages="all")
-            for i in range(getattr(stream, "n", 0)):
-                frames.append(pd.DataFrame(stream[i].df))
-        except Exception:
-            pass
-
-    if pdfplumber is not None:
-        try:
-            with pdfplumber.open(path) as pdf:
-                for page in (pdf.pages or []):
-                    for tb in (page.extract_tables() or []):
-                        frames.append(pd.DataFrame(tb))
-        except Exception:
-            pass
-
-    if not frames:
-        return 0
-
-    try:
-        merged = pd.concat(frames, ignore_index=True)
-    except Exception:
-        return 0
-
-    merged = _clean_headers(merged)
-    merged = _clean_cells(merged)
-    merged = _drop_empty(merged)
-    if merged.empty:
+    if not rows:
         return 0
 
     table = ExtractedTable.objects.create(
         document=doc,
         page_number=1,
         table_index=1,
-        method="merged",
-        columns=[str(c) for c in merged.columns],
-        meta={"rows": int(len(merged))},
+        method="gpt-4o-mini",
+        columns=["code", "label", "value"],
+        meta={"rows": len(rows)},
     )
 
-    code_idx  = _find_code_col(merged)
-    value_idx = _find_value_col(merged, code_idx)
-    label_idx = _find_label_col(merged, code_idx)
+    bulk_rows: List[ExtractedRow] = []
+    for r in rows:
+        bulk_rows.append(ExtractedRow(
+            table=table,
+            code=str(r.get("code") or "").strip(),
+            label=str(r.get("label") or "").strip(),
+            value=(float(r.get("value")) if r.get("value") is not None else None),
+            section=None,
+            raw_data=r
+        ))
+    if bulk_rows:
+        ExtractedRow.objects.bulk_create(bulk_rows, batch_size=200)
 
-    current_section: Optional[str] = None
-
-    for row in _df_to_rows(merged):
-        # detekce sekce pouze u rozvahy
-        if doc_type == "balance":
-            sec_change = _detect_section_from_row(row)
-            if sec_change:
-                current_section = sec_change
-                continue
-
-        # kód
-        code: Optional[str] = None
-        if code_idx is not None:
-            code = _normalize_code(row.get(str(merged.columns[code_idx])))
-        if code is None:
-            # fallback: první detekované číslo (ale krátké)
-            for v in row.values():
-                c = _normalize_code(v)
-                if c:
-                    code = c
-                    break
-
-        # label – nejdřív kolona label_idx, jinak první smysluplný text
-        label: Optional[str] = None
-        if label_idx is not None:
-            cand = row.get(str(merged.columns[label_idx]))
-            cand = _to_python_scalar(cand)
-            if isinstance(cand, str) and cand.strip() and not _safe_is_number_str(cand):
-                label = cand.strip()
-        if label is None:
-            for v in row.values():
-                if isinstance(v, str) and v.strip() and not _safe_is_number_str(v):
-                    label = v.strip()
-                    break
-
-        # hodnota – preferuj value_idx, jinak první číslo v řádku
-        value: Optional[float] = None
-        if value_idx is not None:
-            value = _to_float_if_number(row.get(str(merged.columns[value_idx])))
-        if value is None:
-            for v in row.values():
-                fv = _to_float_if_number(v)
-                if fv is not None:
-                    value = fv
-                    break
-
-        code  = _to_python_scalar(code)
-        value = _to_python_scalar(value)
-        safe_raw = {str(k): _to_python_scalar(v) for k, v in row.items()}
-
-        if (code is not None) or (value is not None):
-            ExtractedRow.objects.create(
-                table=table,
-                code=code,
-                label=label,
-                value=float(value) if isinstance(value, (int, float)) else None,
-                section=current_section if doc_type == "balance" else None,
-                raw_data=safe_raw,
-            )
+    # Normalizace + výpočty
+    rewrite_to_metrics(doc)
+    calculate_and_store_derived(doc)
 
     return 1
 
-# ==========================
+# -------------------------
+# Overwrite kontrola
+# -------------------------
+
+def _existing_doc(owner, year, doc_type) -> Optional[Document]:
+    try:
+        return Document.objects.filter(owner=owner, year=year, doc_type=doc_type).latest("uploaded_at")
+    except Document.DoesNotExist:
+        return None
+
+# -------------------------
 # Views
-# ==========================
+# -------------------------
 
 @login_required(login_url="/login/")
 @transaction.atomic
@@ -408,59 +246,88 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
         year = form.cleaned_data.get("year")
         notes = form.cleaned_data.get("notes")
         balance_files = form.cleaned_data.get("balance_files") or []
-        income_files  = form.cleaned_data.get("income_files")  or []
+        income_files = form.cleaned_data.get("income_files") or []
 
         if not balance_files and not income_files:
             messages.error(request, "Nebyl vybrán žádný soubor.")
             return render(request, "ingestion/upload.html", {"form": form})
+
+        # Kontrola overwrite – pokud existuje doc pro rok+typ, zobrazíme potvrzení
+        for doc_type, files in (("balance", balance_files), ("income", income_files)):
+            if not files:
+                continue
+            exists = _existing_doc(request.user, year, doc_type)
+            if exists and request.POST.get(f"confirm_overwrite_{doc_type}") != "yes":
+                # zobraz potvrzení zvlášť pro každý typ, kde kolize nastala
+                return render(request, "ingestion/confirm_overwrite.html", {
+                    "form": form,
+                    "year": year,
+                    "doc_type": doc_type,
+                    "existing_doc": exists,
+                    "conf_name": f"confirm_overwrite_{doc_type}",
+                    "message": f"Pro rok {year} a typ {doc_type} již existuje dokument: {exists.original_filename}. Přejete si ho přepsat?",
+                })
 
         created_docs = 0
         saved_tables = 0
 
         for pdf in balance_files:
             created_docs += 1
-            try:
-                saved_tables += _process_document(pdf, request.user, year, "balance", notes)
-            except Exception:
-                pass
+            # pokud existuje starý a je potvrzeno přepsání, smažeme ho (včetně souboru) a jeho data
+            old = _existing_doc(request.user, year, "balance")
+            if old:
+                old.delete()
+            saved_tables += _process_document(pdf, request.user, year, "balance", notes)
 
         for pdf in income_files:
             created_docs += 1
-            try:
-                saved_tables += _process_document(pdf, request.user, year, "income", notes)
-            except Exception:
-                pass
+            old = _existing_doc(request.user, year, "income")
+            if old:
+                old.delete()
+            saved_tables += _process_document(pdf, request.user, year, "income", notes)
 
         if saved_tables > 0:
-            messages.success(
-                request,
-                f"Nahráno {created_docs} souborů, uloženo {saved_tables} tabulek."
-                if saved_tables != 1
-                else f"Nahráno {created_docs} souborů, uložena 1 tabulka."
-            )
+            messages.success(request, f"Nahráno {created_docs} souborů, uloženo {saved_tables} tabulek. Data byla normalizována a dopočtena.")
         else:
-            messages.warning(
-                request,
-                f"Nahráno {created_docs} souborů, ale nepodařilo se uložit žádnou tabulku."
-            )
+            messages.warning(request, f"Nahráno {created_docs} souborů, ale nepodařilo se uložit žádnou tabulku.")
+
         return redirect("ingestion:documents")
 
-    return render(request, "ingestion/upload.html", {"form": MultiUploadForm()})
+    # GET – seznam roků, kde už je něco nahráno (pro vizuální zvýraznění ve formuláři)
+    existing_years = set(Document.objects.filter(owner=request.user).values_list("year", flat=True))
+    form = MultiUploadForm()
+    return render(request, "ingestion/upload.html", {"form": form, "existing_years": existing_years})
 
 @login_required(login_url="/login/")
 def documents(request: HttpRequest) -> HttpResponse:
+    # zvýraznění: pro každou (year,doc_type) že existuje
     docs = Document.objects.filter(owner=request.user).order_by("-uploaded_at")
-    return render(request, "ingestion/documents.html", {"documents": docs})
+    years_map: Dict[int, Dict[str, bool]] = {}
+    for d in docs:
+        years_map.setdefault(d.year or 0, {}).setdefault(d.doc_type, True)
+    return render(request, "ingestion/documents.html", {"documents": docs, "years_map": years_map})
 
 @login_required(login_url="/login/")
 def document_detail(request: HttpRequest, doc_id: int) -> HttpResponse:
     doc = get_object_or_404(Document, id=doc_id, owner=request.user)
-    return render(request, "ingestion/document_detail.html", {"doc": doc})
+    rows = ExtractedRow.objects.filter(table__document=doc).order_by("id")
+    metrics_base = FinancialMetric.objects.filter(document=doc, is_derived=False).order_by("code")
+    metrics_derived = FinancialMetric.objects.filter(document=doc, is_derived=True).order_by("derived_key")
+    return render(request, "ingestion/document_detail.html", {
+        "doc": doc,
+        "rows": rows,
+        "metrics_base": metrics_base,
+        "metrics_derived": metrics_derived,
+    })
 
 @login_required(login_url="/login/")
 def table_detail(request: HttpRequest, table_id: int) -> HttpResponse:
     table = get_object_or_404(ExtractedTable, id=table_id, document__owner=request.user)
-    return render(request, "ingestion/table_detail.html", {"table": table})
+    rows = table.rows.all().order_by("id")
+    # graf: použijeme top N základních metrik podle hodnoty (bez derived)
+    base_metrics = FinancialMetric.objects.filter(document=table.document, is_derived=False).exclude(value__isnull=True)
+    base_metrics = base_metrics.order_by("-value")[:20]
+    return render(request, "ingestion/table_detail.html", {"table": table, "rows": rows, "base_metrics": base_metrics})
 
 @login_required(login_url="/login/")
 @transaction.atomic
@@ -468,8 +335,8 @@ def delete_document(request: HttpRequest, doc_id: int) -> HttpResponse:
     doc = get_object_or_404(Document, id=doc_id, owner=request.user)
     if request.method == "POST":
         filename = doc.original_filename
-        doc.delete()
-        messages.success(request, f"Dokument {filename} byl smazán.")
+        doc.delete()  # smaže i file z úložiště
+        messages.success(request, f"Dokument {filename} byl smazán (včetně souboru v úložišti).")
         return redirect("ingestion:documents")
     return render(request, "ingestion/confirm_delete.html", {"object": doc, "type": "dokument"})
 

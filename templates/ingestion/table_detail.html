@@ -1,34 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Detail tabulky{% endblock %}
-
+{% load humanize %}
 {% block content %}
-<h2 class="mb-4">📊 Tabulka {{ table.table_index }}</h2>
+<h2>Tabulka {{ table.id }} – {{ table.document.original_filename }}</h2>
+<p>Metoda: {{ table.method }} | Řádků: {{ table.rows.count }}</p>
 
-<p>
-  <strong>Dokument:</strong> {{ table.document.original_filename }}<br>
-  <strong>Strana:</strong> {{ table.page_number }} | <strong>Metoda:</strong> {{ table.method }}
-</p>
-
-<table class="table table-bordered table-sm">
-  <thead class="table-light">
-    <tr>
-      <th>Kód</th>
-      <th>Hodnota</th>
-    </tr>
-  </thead>
+<h4>Top položky (podle hodnoty)</h4>
+<table class="table table-bordered">
+  <thead><tr><th>Kód</th><th>Položka</th><th class="text-end">Hodnota</th></tr></thead>
   <tbody>
-    {% for row in table.rows.all %}
-    <tr>
-      <td>{{ row.code }}</td>
-      <td>{{ row.value|floatformat:0 }}</td>
-    </tr>
+    {% for m in base_metrics %}
+      <tr>
+        <td>{{ m.code }}</td>
+        <td>{{ m.label }}</td>
+        <td class="text-end">{{ m.value|floatformat:0|intcomma }}</td>
+      </tr>
     {% empty %}
-    <tr>
-      <td colspan="2" class="text-center">Žádné řádky</td>
-    </tr>
+      <tr><td colspan="3" class="text-center text-muted">Není co zobrazit</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
-<a href="{% url 'ingestion:document_detail' table.document.id %}" class="btn btn-secondary">← Zpět</a>
+<h4>Raw</h4>
+<table class="table table-sm table-striped">
+  <thead><tr><th>#</th><th>Kód</th><th>Položka</th><th class="text-end">Hodnota</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>{{ r.code }}</td>
+        <td>{{ r.label }}</td>
+        <td class="text-end">{% if r.value is not None %}{{ r.value|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<a href="{% url 'ingestion:document_detail' table.document.id %}" class="btn btn-secondary">← Zpět na dokument</a>
 {% endblock %}
