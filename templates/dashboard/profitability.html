@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
+{% load json_extras %}
+
 {% block content %}
 <h2>📈 Profitability & Cash Dashboard</h2>
 
@@ -38,43 +40,44 @@
 </div>
 
 <script>
-  const YEARS = {{ years|safe }};
+  // ✅ Data z Django → validní JSON díky filtru tojson
+  const YEARS = {{ years|tojson }};
+  const revenue   = {{ revenue|tojson }};
+  const cogs      = {{ cogs|tojson }};
+  const overheads = {{ overheads|tojson }};
 
-  // helper pro převod dict {y: v} → array v pořadí YEARS
+  const grossMargin = {{ gross_margin|tojson }};
+  const ebit        = {{ ebit|tojson }};
+  const netProfit   = {{ net_profit|tojson }};
+
+  const gmPct   = {{ gross_margin_pct|tojson }};
+  const opPct   = {{ operating_profit_pct|tojson }};
+  const npPct   = {{ net_profit_pct|tojson }};
+
+  const revYoY  = {{ revenue_growth_pct|tojson }};
+  const cogsYoY = {{ cogs_growth_pct|tojson }};
+  const ovhYoY  = {{ overheads_growth_pct|tojson }};
+
+  const cfc  = {{ cash_from_customers|tojson }};
+  const cts  = {{ cash_to_suppliers|tojson }};
+  const gcp  = {{ gross_cash_profit|tojson }};
+  const ocf  = {{ ocf|tojson }};
+  // const ncf  = {{ net_cash_flow|tojson }};
+
+  // Helper pro převod dict {rok: hodnota} → array v pořadí YEARS
   function arr(dict) {
     return YEARS.map(y => dict[String(y)] ?? dict[y] ?? null);
   }
 
-  const revenue   = arr({{ revenue|safe }});
-  const cogs      = arr({{ cogs|safe }});
-  const overheads = arr({{ overheads|safe }});
-
-  const grossMargin = arr({{ gross_margin|safe }});
-  const ebit        = arr({{ ebit|safe }});
-  const netProfit   = arr({{ net_profit|safe }});
-
-  const gmPct   = arr({{ gross_margin_pct|safe }});
-  const opPct   = arr({{ operating_profit_pct|safe }});
-  const npPct   = arr({{ net_profit_pct|safe }});
-
-  const revYoY  = arr({{ revenue_growth_pct|safe }});
-  const cogsYoY = arr({{ cogs_growth_pct|safe }});
-  const ovhYoY  = arr({{ overheads_growth_pct|safe }});
-
-  const cfc  = arr({{ cash_from_customers|safe }});
-  const cts  = arr({{ cash_to_suppliers|safe }});
-  const gcp  = arr({{ gross_cash_profit|safe }});
-  const ocf  = arr({{ ocf|safe }});
-  // const ncf  = arr({{ net_cash_flow|safe }});
-
+  // === Grafy ===
   new Chart(document.getElementById('revCogsOver'), {
     type: 'line',
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Revenue', data: revenue },
-        { label: 'COGS', data: cogs },
-        { label: 'Overheads', data: overheads },
+        { label: 'Revenue', data: arr(revenue) },
+        { label: 'COGS', data: arr(cogs) },
+        { label: 'Overheads', data: arr(overheads) },
       ]
     }
   });
@@ -84,9 +87,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Gross Margin', data: grossMargin },
-        { label: 'EBIT (Operating Profit)', data: ebit },
-        { label: 'Net Profit', data: netProfit },
+        { label: 'Gross Margin', data: arr(grossMargin) },
+        { label: 'EBIT (Operating Profit)', data: arr(ebit) },
+        { label: 'Net Profit', data: arr(netProfit) },
       ]
     }
   });
@@ -96,9 +99,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Gross Margin %', data: gmPct },
-        { label: 'Operating Profit %', data: opPct },
-        { label: 'Net Profit %', data: npPct },
+        { label: 'Gross Margin %', data: arr(gmPct) },
+        { label: 'Operating Profit %', data: arr(opPct) },
+        { label: 'Net Profit %', data: arr(npPct) },
       ]
     }
   });
@@ -108,9 +111,9 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Revenue YoY %', data: revYoY },
-        { label: 'COGS YoY %', data: cogsYoY },
-        { label: 'Overheads YoY %', data: ovhYoY },
+        { label: 'Revenue YoY %', data: arr(revYoY) },
+        { label: 'COGS YoY %', data: arr(cogsYoY) },
+        { label: 'Overheads YoY %', data: arr(ovhYoY) },
       ]
     }
   });
@@ -120,11 +123,10 @@
     data: {
       labels: YEARS,
       datasets: [
-        { label: 'Cash from Customers', data: cfc },
-        { label: 'Cash to Suppliers', data: cts },
-        { label: 'Gross Cash Profit', data: gcp },
-        { label: 'Operating Cash Flow', data: ocf },
-        // { label: 'Net Cash Flow', data: ncf }, // pokud začneš počítat CFI/CFF
+        { label: 'Cash from Customers', data: arr(cfc) },
+        { label: 'Cash to Suppliers', data: arr(cts) },
+        { label: 'Gross Cash Profit', data: arr(gcp) },
+        { label: 'Operating Cash Flow', data: arr(ocf) },
       ]
     }
   });

@@ -1,39 +1,44 @@
 from __future__ import annotations
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterable
 import unicodedata
+from ingestion.models import ExtractedRow, FinancialMetric
 
-# ► V případě potřeby můžeš doplnit aliasy názvů (CZ/EN), ale NEPOUŽÍVÁME je – klíčem je code:
-ALIASES: Dict[str, List[str]] = {
-    # "001": ["dlouhodobý majetek", "non-current assets"],
-    # "002": ["krátkodobý majetek", "current assets"],
-    # ...
-}
+# ---------------------------------------------------------------------
+# Alias / normalizace textu (zatím nepoužíváme, kódujeme podle "code")
+# ---------------------------------------------------------------------
+ALIASES: Dict[str, List[str]] = {}
 
 def normalize_text(s: str) -> str:
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-# ► Mapa dopočítaných metrik pro income/balance – zde nastavíš, z jakých kódů se počítají.
-#   Můžeš rozdělit dle typů výkazů nebo variant formulářů (full/short).
-DERIVED_FORMULAS: Dict[str, Dict[str, List[str]]] = {
-    # Příklad pro výsledovku (income) – NASTAV SI DLE VLASTNÍCH ŘÁDKŮ:
-    # revenue = součet kódů, které u vás reprezentují tržby/výnosy
+# ---------------------------------------------------------------------
+# Mapování řádků na metriky
+# ---------------------------------------------------------------------
+DERIVED_FORMULAS = {
     "income": {
-        "revenue": ["001", "002"],     # např. 001 Tržby z prodeje výrobků a služeb, 002 Tržby za zboží
-        "cogs":    ["003", "004"],     # spotřeba materiálu, prodané zboží
-        "overheads": ["005","006","007"],  # služby, osobní náklady, odpisy...
-        # Derived: gross_margin = revenue - cogs; ebit = gross_margin - overheads; net_profit = z konkrétního kódu
-        # net_profit lze mapovat přímo, např. "net_profit": ["999"]
-        "net_profit": ["999"],  # pokud máš řádek pro čistý zisk/ztrátu
+        # 1) Základní bloky
+        "revenue": ["01", "02"],                  # Tržby vlastní výrobky/služby + Tržby zboží
+        "cogs": ["04", "05"],                     # Náklady na prodané zboží + Výkonová spotřeba
+        "overheads": ["12", "13", "16", "17", "18"],  # Osobní náklady, Daně a poplatky, Odpisy, Ostatní provozní náklady
+
+        # 2) Podpůrné položky pro EBT / Net Profit
+        "other_operating_income": ["15"],         # (neodečítáme v Overheads, vstupuje až do EBIT jen u varianty „z řádků“)
+        "fin_income": ["20"],                     # Finanční výnosy
+        "fin_expense": ["21"],                    # Finanční náklady
+        "tax": ["40"],                            # Daň z příjmů
     },
-    # Příklad pro rozvahu (balance) – NASTAV SI:
+
+    # Pro výpočet „cash“ indikátorů (používá už tvůj profitability_dashboard)
     "balance": {
-        # příklady:
-        "total_assets": ["001","002","003"],   # aktiva celkem (pokud není přímo řádek „Aktiva celkem“)
-        "total_equity": ["100","101","102"],   # vlastní kapitál...
-        "total_liabilities": ["200","201"],    # cizí zdroje...
-    }
+        "inventories": ["055", "056", "057"],
+        "receivables_trade": ["065", "066"],
+        "payables_trade": ["105", "106"],
+    },
 }
 
+# ---------------------------------------------------------------------
+# Utility funkce
+# ---------------------------------------------------------------------
 def sum_codes(code_map: Dict[str, Optional[float]], codes: Iterable[str]) -> Optional[float]:
     acc = 0.0
     has_any = False
@@ -44,33 +49,72 @@ def sum_codes(code_map: Dict[str, Optional[float]], codes: Iterable[str]) -> Opt
             has_any = True
     return acc if has_any else None
 
-# -----------------------------------------------------------------------------
-# MAPOVÁNÍ: CZ výkaz → EN metriky v appce (na základě čísel řádků)
-#
-# Pozn.: Pokud máš jinou číselníkovou sadu, uprav zde bez zásahů do zbytku kódu.
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Uložení metrik (raw + derived) pro 1 dokument
+# ---------------------------------------------------------------------
+def save_financial_metrics(document):
+    """
+    Vezme raw ExtractedRow → uloží jako FinancialMetric(is_derived=False).
+    Pak podle DERIVED_FORMULAS spočítá a uloží derived metriky (is_derived=True).
+    """
+    owner = document.owner
+    year = document.year
 
-DERIVED_FORMULAS = {
-    # Výsledovka
-    "income": {
-        # 1) Základní bloky
-        "revenue": ["01", "02"],            # Tržby vlastní výrobky/služby + Tržby zboží
-        "cogs": ["04", "05"],               # Náklady na prodané zboží + Výkonová spotřeba
-        "overheads": ["12", "13", "16", "17", "18"],  # Osobní náklady, Daně a poplatky, Odpisy, Ostatní provozní náklady
+    # 1) smaž staré metriky pro daný dokument
+    FinancialMetric.objects.filter(document=document).delete()
 
-        # 2) Další podpůrné položky (pro EBT/Net Profit – nepřímo použijeme ve výpočtu)
-        "other_operating_income": ["15"],   # Ostatní provozní výnosy (volitelně do EBIT „řádkovou“ variantou)
-        "fin_income": ["20"],               # Finanční výnosy
-        "fin_expense": ["21"],              # Finanční náklady
-        "tax": ["40"],                      # Daň z příjmů
-    },
+    # 2) RAW metriky
+    rows = ExtractedRow.objects.filter(table__document=document)
+    code_map: Dict[str, Optional[float]] = {}
+    for r in rows:
+        code_map[r.code] = r.value
+        FinancialMetric.objects.create(
+            document=document,
+            year=year,
+            owner=owner,
+            code=r.code,
+            label=r.label,
+            value=r.value,
+            is_derived=False
+        )
 
-    # Rozvaha – pro výpočty „cash“ indikátorů potřebujeme změny Stavů
-    # Tady jsou "kanonická" čísla řádků – uprav podle své rozvahy:
-    "balance": {
-        "inventories": ["055", "056", "057"],      # Zásoby (součtově / nebo vyber přesně)
-        "receivables_trade": ["065", "066"],       # Pohledávky z obchodního styku
-        "payables_trade": ["105", "106"],          # Závazky z obchodního styku
-        # můžeš přidat i další pracovní-kapitál položky (předplacené náklady, krátk. finanční majetek apod.)
-    },
-}
+    # 3) Derived metriky z DERIVED_FORMULAS
+    income_map = DERIVED_FORMULAS.get("income", {})
+    # základní bloky
+    revenue   = sum_codes(code_map, income_map.get("revenue", []))
+    cogs      = sum_codes(code_map, income_map.get("cogs", []))
+    overheads = sum_codes(code_map, income_map.get("overheads", []))
+
+    if revenue is not None:
+        FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                       derived_key="revenue", value=revenue, is_derived=True, label="Revenue")
+    if cogs is not None:
+        FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                       derived_key="cogs", value=cogs, is_derived=True, label="COGS")
+    if overheads is not None:
+        FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                       derived_key="overheads", value=overheads, is_derived=True, label="Overheads")
+
+    # Gross margin & EBIT
+    if revenue is not None and cogs is not None:
+        gm = revenue - cogs
+        FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                       derived_key="gross_margin", value=gm, is_derived=True, label="Gross Margin")
+        if overheads is not None:
+            ebit = gm - overheads
+            FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                           derived_key="ebit", value=ebit, is_derived=True, label="EBIT")
+
+    # Net Profit (pokud máš přímo řádek, nebo spočítáš přes fin_income/fin_expense/tax)
+    fin_income = sum_codes(code_map, income_map.get("fin_income", []))
+    fin_expense = sum_codes(code_map, income_map.get("fin_expense", []))
+    tax = sum_codes(code_map, income_map.get("tax", []))
+
+    if revenue is not None and cogs is not None:
+        gm = revenue - cogs
+        if overheads is not None:
+            ebit = gm - overheads
+            ebt = ebit + (fin_income or 0) - (fin_expense or 0)
+            np = ebt - (tax or 0)
+            FinancialMetric.objects.create(document=document, year=year, owner=owner,
+                                           derived_key="net_profit", value=np, is_derived=True, label="Net Profit")

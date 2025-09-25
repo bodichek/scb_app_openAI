@@ -13,6 +13,8 @@ from openai import OpenAI
 from .forms import MultiUploadForm
 from .models import Document, ExtractedTable, ExtractedRow, FinancialMetric
 from .utils import DERIVED_FORMULAS, sum_codes
+from ingestion.utils import save_financial_metrics
+
 
 client = OpenAI(api_key=getattr(settings, "OPENAI_API_KEY", None))
 
@@ -140,10 +142,19 @@ def rewrite_to_metrics(document: Document) -> None:
         FinancialMetric.objects.bulk_create(bulk, batch_size=100)
 
 def calculate_and_store_derived(document: Document) -> None:
-    """Dopočítané metriky (uloží se jako is_derived=True)."""
+    """
+    Dopočítané metriky (uloží se jako is_derived=True) podle sjednaného mappingu:
+    - Revenue, COGS, Overheads
+    - Gross Margin (abs + %)
+    - EBIT (Operating Profit) = Gross Margin − Overheads
+    - Net Profit = (EBIT + (fin_income - fin_expense)) - tax
+    - EBIT margin %, Net Profit margin %
+    """
+    # 1) Smaž staré derived metriky pro daný dokument
     FinancialMetric.objects.filter(document=document, is_derived=True).delete()
 
-    code_map: Dict[str, float] = {}
+    # 2) Namapuj raw kódy -> hodnoty
+    code_map: Dict[str, Optional[float]] = {}
     for m in FinancialMetric.objects.filter(document=document, is_derived=False):
         if m.code:
             code_map[m.code] = m.value if m.value is not None else code_map.get(m.code, None)
@@ -151,40 +162,54 @@ def calculate_and_store_derived(document: Document) -> None:
     formulas = DERIVED_FORMULAS.get(document.doc_type, {})
     derived_bulk: List[FinancialMetric] = []
 
-    for key, codes in formulas.items():
-        val = sum_codes(code_map, codes)
-        derived_bulk.append(FinancialMetric(
-            document=document,
-            code="",
-            label=f"Derived {key}",
-            value=val,
-            year=document.year,
-            is_derived=True,
-            derived_key=key
-        ))
+    def add_metric(key: str, value: Optional[float], label: str):
+        """Helper: přidá derived metriku jen pokud má hodnotu."""
+        if value is not None:
+            derived_bulk.append(FinancialMetric(
+                document=document,
+                code="",
+                label=label,
+                value=value,
+                year=document.year,
+                is_derived=True,
+                derived_key=key
+            ))
 
-    def _find_val(key: str) -> Optional[float]:
-        for x in derived_bulk:
-            if x.derived_key == key:
-                return x.value
-        return None
+    # ---- Základní bloky
+    revenue   = sum_codes(code_map, formulas.get("revenue", []))
+    cogs      = sum_codes(code_map, formulas.get("cogs", []))
+    overheads = sum_codes(code_map, formulas.get("overheads", []))
 
-    revenue = _find_val("revenue")
-    cogs = _find_val("cogs")
-    overheads = _find_val("overheads")
+    add_metric("revenue", revenue, "Revenue")
+    add_metric("cogs", cogs, "COGS")
+    add_metric("overheads", overheads, "Overheads")
 
+    # ---- Gross Margin (abs i %)
     gross_margin = (revenue - cogs) if (revenue is not None and cogs is not None) else None
+    gross_margin_pct = (gross_margin / revenue * 100.0) if (gross_margin is not None and revenue) else None
+    add_metric("gross_margin", gross_margin, "Gross Margin")
+    add_metric("gross_margin_pct", gross_margin_pct, "Gross Margin %")
+
+    # ---- EBIT (Varianta A: GM − Overheads)
     ebit = (gross_margin - overheads) if (gross_margin is not None and overheads is not None) else None
+    add_metric("ebit", ebit, "EBIT")
 
-    derived_bulk.append(FinancialMetric(
-        document=document, code="", label="Derived gross_margin", value=gross_margin,
-        year=document.year, is_derived=True, derived_key="gross_margin"
-    ))
-    derived_bulk.append(FinancialMetric(
-        document=document, code="", label="Derived ebit", value=ebit,
-        year=document.year, is_derived=True, derived_key="ebit"
-    ))
+    # ---- Net Profit (EBT - tax)
+    fin_income  = sum_codes(code_map, formulas.get("fin_income", []))
+    fin_expense = sum_codes(code_map, formulas.get("fin_expense", []))
+    tax         = sum_codes(code_map, formulas.get("tax", []))
 
+    ebt = (ebit + (fin_income or 0) - (fin_expense or 0)) if ebit is not None else None
+    net_profit = (ebt - (tax or 0)) if ebt is not None else None
+    add_metric("net_profit", net_profit, "Net Profit")
+
+    # ---- Margin %
+    ebit_margin_pct = (ebit / revenue * 100.0) if (ebit is not None and revenue) else None
+    net_profit_pct  = (net_profit / revenue * 100.0) if (net_profit is not None and revenue) else None
+    add_metric("operating_profit_pct", ebit_margin_pct, "EBIT Margin %")
+    add_metric("net_profit_pct", net_profit_pct, "Net Profit %")
+
+    # ---- Ulož vše
     if derived_bulk:
         FinancialMetric.objects.bulk_create(derived_bulk, batch_size=100)
 
