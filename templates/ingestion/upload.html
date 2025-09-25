@@ -1,22 +1,15 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h2>Nahrát výkazy</h2>
+  <h2>Nahrát PDF výkazy</h2>
 
-{% if existing_years %}
-  <div class="alert alert-info">
-    Již existují data pro roky: {{ existing_years|join:", " }}.
-  </div>
-{% endif %}
-
-<form method="post" enctype="multipart/form-data">
+  <form method="POST" action="{% url 'ingestion:upload_pdf' %}" enctype="multipart/form-data">
   {% csrf_token %}
   {{ form.as_p }}
-
-  {# Overwrite potvrzení (skryté pole doplní view při kolizi) #}
-  {% if conf_name %}
-    <input type="hidden" name="{{ conf_name }}" value="yes">
-  {% endif %}
-
-  <button class="btn btn-primary" type="submit">Nahrát</button>
+  <button type="submit">Nahrát</button>
 </form>
+
+  {% if existing_years %}
+    <p>Už máš nahrané roky: {{ existing_years|join:", " }}</p>
+  {% endif %}
 {% endblock %}

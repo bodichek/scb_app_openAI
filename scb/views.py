@@ -1,32 +1,29 @@
-from django.shortcuts import render, redirect
-from django.contrib.auth import login
+# scb/views.py
+from django.shortcuts import redirect, render
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from .forms import CustomUserCreationForm
-from financials.models import FinancialMetric
-
+from django.contrib.auth import login
+from django.contrib.auth.forms import UserCreationForm
 
 def home(request):
-    # ✅ pokud uživatel je přihlášený, pošleme ho rovnou na dashboard
+    # přihlášeného pošli rovnou na dashboard
     if request.user.is_authenticated:
         return redirect("dashboard:index")
     return render(request, "home.html")
 
-
 def signup(request):
     if request.method == "POST":
-        form = CustomUserCreationForm(request.POST)
+        form = UserCreationForm(request.POST)  # vestavěný formulář
         if form.is_valid():
             user = form.save(commit=False)
-            user.email = form.cleaned_data["email"]
+            # volitelně doplnitelné, pokud máš rozšířený formulář
+            user.email = form.cleaned_data.get("email", "")
             user.first_name = form.cleaned_data.get("first_name", "")
             user.last_name = form.cleaned_data.get("last_name", "")
             user.save()
             login(request, user)
             messages.success(request, "Účet byl úspěšně vytvořen 🎉")
             return redirect("dashboard:index")
-        else:
-            messages.error(request, "Opravit chyby ve formuláři.")
+        messages.error(request, "Oprav prosím chyby ve formuláři.")
     else:
-        form = CustomUserCreationForm()
+        form = UserCreationForm()
     return render(request, "signup.html", {"form": form})

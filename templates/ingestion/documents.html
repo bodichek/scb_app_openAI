@@ -1,26 +1,39 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Moje dokumenty</h2>
+<h2>📂 Moje dokumenty</h2>
 
 <table class="table table-striped">
   <thead>
     <tr>
-      <th>Soubor</th><th>Rok</th><th>Typ</th><th>Nahráno</th><th></th>
+      <th>Soubor</th>
+      <th>Rok</th>
+      <th>Typ</th>
+      <th>Nahráno</th>
+      <th>Akce</th>
     </tr>
   </thead>
   <tbody>
-    {% for d in documents %}
-      <tr class="{% if d.year in years_map and years_map.d.year.d.doc_type %}table-warning{% endif %}">
-        <td>{{ d.original_filename }}</td>
-        <td>{{ d.year }}</td>
-        <td>{{ d.get_doc_type_display }}</td>
-        <td>{{ d.uploaded_at }}</td>
-        <td>
-          <a class="btn btn-sm btn-primary" href="{% url 'ingestion:document_detail' d.id %}">Detail</a>
-        </td>
-      </tr>
+    {% for doc in documents %}
+    <tr>
+      <td>{{ doc.original_filename }}</td>
+      <td>{{ doc.year }}</td>
+      <td>{{ doc.doc_type }}</td>
+      <td>{{ doc.uploaded_at|date:"d.m.Y H:i" }}</td>
+      <td>
+        <a href="{% url 'ingestion:document_detail' doc.id %}" class="btn btn-sm btn-primary">Detail</a>
+
+        <!-- Tlačítko pro smazání -->
+        <form method="post" action="{% url 'ingestion:delete_document' doc.id %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-danger"
+                  onclick="return confirm('Opravdu chcete smazat tento dokument včetně souboru?')">
+            Smazat
+          </button>
+        </form>
+      </td>
+    </tr>
     {% empty %}
-      <tr><td colspan="5">Žádné dokumenty.</td></tr>
+    <tr><td colspan="5">Zatím nemáte žádné dokumenty.</td></tr>
     {% endfor %}
   </tbody>
 </table>

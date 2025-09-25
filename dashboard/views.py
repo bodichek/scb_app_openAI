@@ -6,9 +6,7 @@ from django.http import FileResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-# správný import z ingestion
 from ingestion.models import Document, ExtractedRow, FinancialMetric
-
 
 @login_required(login_url="/login/")
 def dashboard(request):
@@ -74,16 +72,16 @@ def metrics_dashboard(request):
     rows = ExtractedRow.objects.filter(table__document__owner=request.user)
     metrics = FinancialMetric.objects.filter(document__owner=request.user)
 
-    # Výnosy podle roku
+    # Výnosy podle roku (derived_key místo neexistujícího metric_key)
     revenue_by_year = {}
     for m in metrics:
-        if m.metric_key == "revenue":
+        if m.derived_key == "revenue":
             revenue_by_year[m.document.year] = m.value
 
     # Náklady podle roku
     costs_by_year = {}
     for m in metrics:
-        if m.metric_key == "costs":
+        if m.derived_key == "costs":
             costs_by_year[m.document.year] = m.value
 
     context = {
@@ -110,21 +108,18 @@ def export_pdf(request):
     p.drawString(100, 800, "Přehled finančních metrik")
 
     # Načtení metrik
-    metrics = FinancialMetric.objects.filter(document__owner=request.user).order_by("year", "metric_key")
+    metrics = FinancialMetric.objects.filter(document__owner=request.user).order_by("year", "derived_key")
     y = 760
     p.setFont("Helvetica", 12)
     for m in metrics:
-        label = m.label if hasattr(m, "label") and m.label else m.metric_key
+        label = m.label if getattr(m, "label", None) else (m.derived_key or m.code or "metric")
         p.drawString(100, y, f"{label} ({m.year}): {m.value}")
         y -= 20
-
-        # nová stránka, když dojdeme dolů
         if y < 100:
             p.showPage()
             p.setFont("Helvetica", 12)
             y = 800
 
-    # Dokončení PDF
     p.showPage()
     p.save()
     buffer.seek(0)

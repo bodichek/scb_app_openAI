@@ -9,7 +9,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 
 DEBUG = True
 
-ALLOWED_HOSTS: list[str] = ["127.0.0.1", "localhost"]
+ALLOWED_HOSTS: list[str] = ["127.0.0.1", "localhost", ".pythonanywhere.com"]
 
 OPENAI_MODEL = "gpt-4o-mini"
 
@@ -22,9 +22,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',
     'ingestion',
     'dashboard',
-    'financials',
     "widget_tweaks",
 ]
 

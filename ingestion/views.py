@@ -1,7 +1,7 @@
+# ingestion/views.py
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import json
-
 import pdfplumber
 from django.conf import settings
 from django.contrib import messages
@@ -9,46 +9,75 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-
 from openai import OpenAI
-
 from .forms import MultiUploadForm
 from .models import Document, ExtractedTable, ExtractedRow, FinancialMetric
 from .utils import DERIVED_FORMULAS, sum_codes
 
-client = OpenAI(api_key=settings.OPENAI_API_KEY)
+client = OpenAI(api_key=getattr(settings, "OPENAI_API_KEY", None))
 
 # -------------------------
-# OpenAI + PDF
+# PDF text extraction
 # -------------------------
 
 def extract_text_from_pdf(path: str) -> str:
-    parts: List[str] = []
+    """
+    Otevře PDF pomocí pdfplumber a vrátí text všech stránek jako jeden string.
+    """
+    parts: list[str] = []
     with pdfplumber.open(path) as pdf:
         for p in pdf.pages:
             parts.append(p.extract_text() or "")
     return "\n".join(parts)
 
+# -------------------------
+# OpenAI parsing
+# -------------------------
+
 def parse_pdf_with_gpt(pdf_path: str, doc_type: str) -> List[Dict[str, Any]]:
     """
-    Pošle text PDF do GPT-4o mini a vrátí seznam řádků:
-    {"code": "001", "label": "Tržby ...", "value": 123456.0}
+    Pošle text PDF do GPT a vrátí seznam řádků:
+    {"code": "001", "label": "...", "value": 123456.0, "section": "asset/liability/other"}
     """
     text = extract_text_from_pdf(pdf_path)
-    prompt = f"""
-    From the following Czech financial statement text, extract a JSON array of rows.
-    Each row MUST be an object with keys: "code" (string row number like "001" or "01"),
-    "label" (string item name), "value" (float or null) for the CURRENT period.
-    Return ONLY valid JSON. No explanations.
 
-    Text:
-    {text}
-    """
+    if doc_type == "balance":
+        # Rozvaha = speciální prompt
+        prompt = f"""
+        From the following Czech BALANCE SHEET (rozvaha) text, extract a JSON array of rows.
+
+        Each row MUST have these keys:
+        - "code": string row number like "001" or "" if missing
+        - "label": string item name
+        - "value": float (use null if empty)
+        - "section": one of ["asset", "liability"]
+
+        Rules:
+        - Rows related to Aktiva (assets) → section = "asset"
+        - Rows related to Pasiva or Vlastní kapitál (liabilities/equity) → section = "liability"
+        - Return ONLY valid JSON. No explanations.
+
+        Text:
+        {text}
+        """
+    else:
+        # Výkaz zisku a ztráty = původní prompt
+        prompt = f"""
+        From the following Czech INCOME STATEMENT text, extract a JSON array of rows.
+        Each row MUST be an object with keys:
+        - "code": string row number like "001" or "01"
+        - "label": string item name
+        - "value": float or null for the CURRENT period
+        Return ONLY valid JSON. No explanations.
+
+        Text:
+        {text}
+        """
 
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=settings.OPENAI_MODEL,
         messages=[
-            {"role": "system", "content": "You are an expert in Czech financial statements. Output JSON only."},
+            {"role": "system", "content": "You are an expert in Czech accounting. Output JSON only."},
             {"role": "user", "content": prompt}
         ],
         response_format={"type": "json_object"}
@@ -56,7 +85,6 @@ def parse_pdf_with_gpt(pdf_path: str, doc_type: str) -> List[Dict[str, Any]]:
 
     try:
         data = json.loads(resp.choices[0].message.content)
-        # očekáváme {"rows":[...]} nebo přímo [...]
         if isinstance(data, dict) and "rows" in data:
             rows = data["rows"]
         elif isinstance(data, list):
@@ -66,18 +94,24 @@ def parse_pdf_with_gpt(pdf_path: str, doc_type: str) -> List[Dict[str, Any]]:
     except Exception:
         rows = []
 
-    # sanitace
+    # Sanitace
     out: List[Dict[str, Any]] = []
     for r in rows or []:
         code = str(r.get("code") or "").strip()
         label = str(r.get("label") or "").strip()
+        section = r.get("section") if doc_type == "balance" else None
         val = r.get("value")
         try:
             val = float(val) if val is not None else None
         except Exception:
             val = None
         if code or (val is not None):
-            out.append({"code": code, "label": label, "value": val})
+            out.append({
+                "code": code,
+                "label": label,
+                "value": val,
+                "section": section
+            })
     return out
 
 # -------------------------
@@ -85,15 +119,10 @@ def parse_pdf_with_gpt(pdf_path: str, doc_type: str) -> List[Dict[str, Any]]:
 # -------------------------
 
 def rewrite_to_metrics(document: Document) -> None:
-    """
-    Přepíše ExtractedRow -> FinancialMetric (per kód).
-    Nevyužíváme aliasy; klíčem je code.
-    """
-    # smažeme staré normalizované (aby se při přepisu roku neduplikovalo)
+    """Přepíše ExtractedRow -> FinancialMetric (per kód)."""
     FinancialMetric.objects.filter(document=document, is_derived=False).delete()
 
     rows = ExtractedRow.objects.filter(table__document=document)
-    # Pozor: kód může být prázdný – ukládej jen ty, které code aspoň mají NEBO mají value
     bulk: List[FinancialMetric] = []
     for r in rows:
         if not (r.code or r.value is not None):
@@ -111,13 +140,9 @@ def rewrite_to_metrics(document: Document) -> None:
         FinancialMetric.objects.bulk_create(bulk, batch_size=100)
 
 def calculate_and_store_derived(document: Document) -> None:
-    """
-    Dopočítané metriky (uloží se jako is_derived=True).
-    Konfigurace je v DERIVED_FORMULAS (per doc_type).
-    """
+    """Dopočítané metriky (uloží se jako is_derived=True)."""
     FinancialMetric.objects.filter(document=document, is_derived=True).delete()
 
-    # Mapa kód -> hodnota (poslední hodnota, když je více stejných kódů)
     code_map: Dict[str, float] = {}
     for m in FinancialMetric.objects.filter(document=document, is_derived=False):
         if m.code:
@@ -126,7 +151,6 @@ def calculate_and_store_derived(document: Document) -> None:
     formulas = DERIVED_FORMULAS.get(document.doc_type, {})
     derived_bulk: List[FinancialMetric] = []
 
-    # jednoduché sumy dle mapy
     for key, codes in formulas.items():
         val = sum_codes(code_map, codes)
         derived_bulk.append(FinancialMetric(
@@ -139,8 +163,6 @@ def calculate_and_store_derived(document: Document) -> None:
             derived_key=key
         ))
 
-    # ukázkové složené metriky – pokud chceš, doplň si logiku nad derived_bulk (např. ebit = revenue - cogs - overheads)
-    # zde příklad: pokud máme revenue a cogs/overheads, dopočítej hrubou marži a EBIT:
     def _find_val(key: str) -> Optional[float]:
         for x in derived_bulk:
             if x.derived_key == key:
@@ -171,12 +193,7 @@ def calculate_and_store_derived(document: Document) -> None:
 # -------------------------
 
 def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
-    """
-    1) Vytvoří Document
-    2) Pošle PDF do OpenAI a uloží ExtractedTable + ExtractedRow
-    3) Přepíše na FinancialMetric (per code)
-    4) Dopočítá derived a uloží je
-    """
+    """Pipeline: vytvoří Document -> GPT parsing -> ExtractedRow -> FinancialMetric -> Derived."""
     doc = Document.objects.create(
         file=pdf_file,
         original_filename=getattr(pdf_file, "name", "upload.pdf"),
@@ -188,7 +205,6 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
 
     path = doc.file.path
     rows = parse_pdf_with_gpt(path, doc_type)
-
     if not rows:
         return 0
 
@@ -208,13 +224,12 @@ def _process_document(pdf_file, user, year, doc_type, notes=None) -> int:
             code=str(r.get("code") or "").strip(),
             label=str(r.get("label") or "").strip(),
             value=(float(r.get("value")) if r.get("value") is not None else None),
-            section=None,
+            section=r.get("section") if "section" in r else None,
             raw_data=r
         ))
     if bulk_rows:
         ExtractedRow.objects.bulk_create(bulk_rows, batch_size=200)
 
-    # Normalizace + výpočty
     rewrite_to_metrics(doc)
     calculate_and_store_derived(doc)
 
@@ -252,13 +267,11 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
             messages.error(request, "Nebyl vybrán žádný soubor.")
             return render(request, "ingestion/upload.html", {"form": form})
 
-        # Kontrola overwrite – pokud existuje doc pro rok+typ, zobrazíme potvrzení
         for doc_type, files in (("balance", balance_files), ("income", income_files)):
             if not files:
                 continue
             exists = _existing_doc(request.user, year, doc_type)
             if exists and request.POST.get(f"confirm_overwrite_{doc_type}") != "yes":
-                # zobraz potvrzení zvlášť pro každý typ, kde kolize nastala
                 return render(request, "ingestion/confirm_overwrite.html", {
                     "form": form,
                     "year": year,
@@ -273,7 +286,6 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
 
         for pdf in balance_files:
             created_docs += 1
-            # pokud existuje starý a je potvrzeno přepsání, smažeme ho (včetně souboru) a jeho data
             old = _existing_doc(request.user, year, "balance")
             if old:
                 old.delete()
@@ -287,20 +299,18 @@ def upload_pdf(request: HttpRequest) -> HttpResponse:
             saved_tables += _process_document(pdf, request.user, year, "income", notes)
 
         if saved_tables > 0:
-            messages.success(request, f"Nahráno {created_docs} souborů, uloženo {saved_tables} tabulek. Data byla normalizována a dopočtena.")
+            messages.success(request, f"Nahráno {created_docs} souborů, uloženo {saved_tables} tabulek.")
         else:
             messages.warning(request, f"Nahráno {created_docs} souborů, ale nepodařilo se uložit žádnou tabulku.")
 
         return redirect("ingestion:documents")
 
-    # GET – seznam roků, kde už je něco nahráno (pro vizuální zvýraznění ve formuláři)
     existing_years = set(Document.objects.filter(owner=request.user).values_list("year", flat=True))
     form = MultiUploadForm()
     return render(request, "ingestion/upload.html", {"form": form, "existing_years": existing_years})
 
 @login_required(login_url="/login/")
-def documents(request: HttpRequest) -> HttpResponse:
-    # zvýraznění: pro každou (year,doc_type) že existuje
+def documents_list(request: HttpRequest) -> HttpResponse:
     docs = Document.objects.filter(owner=request.user).order_by("-uploaded_at")
     years_map: Dict[int, Dict[str, bool]] = {}
     for d in docs:
@@ -324,9 +334,7 @@ def document_detail(request: HttpRequest, doc_id: int) -> HttpResponse:
 def table_detail(request: HttpRequest, table_id: int) -> HttpResponse:
     table = get_object_or_404(ExtractedTable, id=table_id, document__owner=request.user)
     rows = table.rows.all().order_by("id")
-    # graf: použijeme top N základních metrik podle hodnoty (bez derived)
-    base_metrics = FinancialMetric.objects.filter(document=table.document, is_derived=False).exclude(value__isnull=True)
-    base_metrics = base_metrics.order_by("-value")[:20]
+    base_metrics = FinancialMetric.objects.filter(document=table.document, is_derived=False).exclude(value__isnull=True).order_by("-value")[:20]
     return render(request, "ingestion/table_detail.html", {"table": table, "rows": rows, "base_metrics": base_metrics})
 
 @login_required(login_url="/login/")
@@ -335,7 +343,7 @@ def delete_document(request: HttpRequest, doc_id: int) -> HttpResponse:
     doc = get_object_or_404(Document, id=doc_id, owner=request.user)
     if request.method == "POST":
         filename = doc.original_filename
-        doc.delete()  # smaže i file z úložiště
+        doc.delete()  # smaže i file z uložiště
         messages.success(request, f"Dokument {filename} byl smazán (včetně souboru v úložišti).")
         return redirect("ingestion:documents")
     return render(request, "ingestion/confirm_delete.html", {"object": doc, "type": "dokument"})
