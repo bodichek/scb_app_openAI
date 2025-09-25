@@ -16,5 +16,6 @@ urlpatterns = [
 
     # Aplikace
     path("ingestion/", include("ingestion.urls")),
-    path("dashboard/", include("dashboard.urls")),
+    path("dashboard/", include("dashboard.urls", namespace="dashboard")),
+
 ]

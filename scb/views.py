@@ -3,6 +3,7 @@ from django.contrib.auth import login
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from .forms import CustomUserCreationForm
+from financials.models import FinancialMetric
 
 
 def home(request):

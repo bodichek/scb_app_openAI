@@ -1,13 +1,17 @@
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv()
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 
 DEBUG = True
 
 ALLOWED_HOSTS: list[str] = ["127.0.0.1", "localhost"]
+
+OPENAI_MODEL = "gpt-4o-mini"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -20,6 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'ingestion',
     'dashboard',
+    'financials',
     "widget_tweaks",
 ]
 

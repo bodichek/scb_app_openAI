@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📊 Dashboard</h1>
+
+<h2>Dokumenty</h2>
+<ul>
+    {% for doc in documents %}
+        <li>{{ doc.year }} - {{ doc.original_filename }} ({{ doc.doc_type }})</li>
+    {% empty %}
+        <li>Žádné dokumenty</li>
+    {% endfor %}
+</ul>
+
+<h2>Metriky</h2>
+<table border="1">
+    <tr>
+        <th>Dokument</th>
+        <th>Klíč</th>
+        <th>Hodnota</th>
+    </tr>
+    {% for m in metrics %}
+        <tr>
+            <td>{{ m.document.year }}</td>
+            <td>{{ m.metric_key }}</td>
+            <td>{{ m.value }}</td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="3">Žádné metriky</td></tr>
+    {% endfor %}
+</table>
+
+<h2>Graf výnosů podle roku</h2>
+<div>
+    <canvas id="revenueChart"></canvas>
+</div>
+
+<h2>Graf nákladů podle roku</h2>
+<div>
+    <canvas id="costsChart"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const revenueCtx = document.getElementById('revenueChart');
+    new Chart(revenueCtx, {
+        type: 'line',
+        data: {
+            labels: {{ revenue_by_year.keys|list|safe }},
+            datasets: [{
+                label: 'Výnosy',
+                data: {{ revenue_by_year.values|list|safe }},
+                borderColor: 'green',
+                fill: false
+            }]
+        }
+    });
+
+    const costsCtx = document.getElementById('costsChart');
+    new Chart(costsCtx, {
+        type: 'line',
+        data: {
+            labels: {{ costs_by_year.keys|list|safe }},
+            datasets: [{
+                label: 'Náklady',
+                data: {{ costs_by_year.values|list|safe }},
+                borderColor: 'red',
+                fill: false
+            }]
+        }
+    });
+</script>
+
+{% endblock %}
