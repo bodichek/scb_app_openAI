@@ -34,9 +34,43 @@ DERIVED_FORMULAS: Dict[str, Dict[str, List[str]]] = {
     }
 }
 
-def sum_codes(code_to_value: Dict[str, float], codes: List[str]) -> Optional[float]:
-    vals = [code_to_value.get(c) for c in codes if c in code_to_value]
-    vals = [v for v in vals if v is not None]
-    if not vals:
-        return None
-    return float(sum(vals))
+def sum_codes(code_map: Dict[str, Optional[float]], codes: Iterable[str]) -> Optional[float]:
+    acc = 0.0
+    has_any = False
+    for c in codes:
+        v = code_map.get(c)
+        if v is not None:
+            acc += float(v)
+            has_any = True
+    return acc if has_any else None
+
+# -----------------------------------------------------------------------------
+# MAPOVÁNÍ: CZ výkaz → EN metriky v appce (na základě čísel řádků)
+#
+# Pozn.: Pokud máš jinou číselníkovou sadu, uprav zde bez zásahů do zbytku kódu.
+# -----------------------------------------------------------------------------
+
+DERIVED_FORMULAS = {
+    # Výsledovka
+    "income": {
+        # 1) Základní bloky
+        "revenue": ["01", "02"],            # Tržby vlastní výrobky/služby + Tržby zboží
+        "cogs": ["04", "05"],               # Náklady na prodané zboží + Výkonová spotřeba
+        "overheads": ["12", "13", "16", "17", "18"],  # Osobní náklady, Daně a poplatky, Odpisy, Ostatní provozní náklady
+
+        # 2) Další podpůrné položky (pro EBT/Net Profit – nepřímo použijeme ve výpočtu)
+        "other_operating_income": ["15"],   # Ostatní provozní výnosy (volitelně do EBIT „řádkovou“ variantou)
+        "fin_income": ["20"],               # Finanční výnosy
+        "fin_expense": ["21"],              # Finanční náklady
+        "tax": ["40"],                      # Daň z příjmů
+    },
+
+    # Rozvaha – pro výpočty „cash“ indikátorů potřebujeme změny Stavů
+    # Tady jsou "kanonická" čísla řádků – uprav podle své rozvahy:
+    "balance": {
+        "inventories": ["055", "056", "057"],      # Zásoby (součtově / nebo vyber přesně)
+        "receivables_trade": ["065", "066"],       # Pohledávky z obchodního styku
+        "payables_trade": ["105", "106"],          # Závazky z obchodního styku
+        # můžeš přidat i další pracovní-kapitál položky (předplacené náklady, krátk. finanční majetek apod.)
+    },
+}

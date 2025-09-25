@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<h2>📈 Profitability & Cash Dashboard</h2>
+
+{% if not years %}
+  <div class="alert alert-warning">Nenalezeny žádné výsledovky.</div>
+{% else %}
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="row g-4">
+  <div class="col-12">
+    <h4>Revenue vs COGS vs Overheads</h4>
+    <canvas id="revCogsOver"></canvas>
+  </div>
+
+  <div class="col-12">
+    <h4>Gross Margin (abs) + EBIT + Net Profit</h4>
+    <canvas id="profitBlocks"></canvas>
+  </div>
+
+  <div class="col-12">
+    <h4>Margins % (Gross, Operating, Net)</h4>
+    <canvas id="marginsPct"></canvas>
+  </div>
+
+  <div class="col-12">
+    <h4>YoY Growth % (Revenue / COGS / Overheads)</h4>
+    <canvas id="yoyGrowth"></canvas>
+  </div>
+
+  <div class="col-12">
+    <h4>Cash Side (indicative)</h4>
+    <canvas id="cashSide"></canvas>
+  </div>
+</div>
+
+<script>
+  const YEARS = {{ years|safe }};
+
+  // helper pro převod dict {y: v} → array v pořadí YEARS
+  function arr(dict) {
+    return YEARS.map(y => dict[String(y)] ?? dict[y] ?? null);
+  }
+
+  const revenue   = arr({{ revenue|safe }});
+  const cogs      = arr({{ cogs|safe }});
+  const overheads = arr({{ overheads|safe }});
+
+  const grossMargin = arr({{ gross_margin|safe }});
+  const ebit        = arr({{ ebit|safe }});
+  const netProfit   = arr({{ net_profit|safe }});
+
+  const gmPct   = arr({{ gross_margin_pct|safe }});
+  const opPct   = arr({{ operating_profit_pct|safe }});
+  const npPct   = arr({{ net_profit_pct|safe }});
+
+  const revYoY  = arr({{ revenue_growth_pct|safe }});
+  const cogsYoY = arr({{ cogs_growth_pct|safe }});
+  const ovhYoY  = arr({{ overheads_growth_pct|safe }});
+
+  const cfc  = arr({{ cash_from_customers|safe }});
+  const cts  = arr({{ cash_to_suppliers|safe }});
+  const gcp  = arr({{ gross_cash_profit|safe }});
+  const ocf  = arr({{ ocf|safe }});
+  // const ncf  = arr({{ net_cash_flow|safe }});
+
+  new Chart(document.getElementById('revCogsOver'), {
+    type: 'line',
+    data: {
+      labels: YEARS,
+      datasets: [
+        { label: 'Revenue', data: revenue },
+        { label: 'COGS', data: cogs },
+        { label: 'Overheads', data: overheads },
+      ]
+    }
+  });
+
+  new Chart(document.getElementById('profitBlocks'), {
+    type: 'line',
+    data: {
+      labels: YEARS,
+      datasets: [
+        { label: 'Gross Margin', data: grossMargin },
+        { label: 'EBIT (Operating Profit)', data: ebit },
+        { label: 'Net Profit', data: netProfit },
+      ]
+    }
+  });
+
+  new Chart(document.getElementById('marginsPct'), {
+    type: 'line',
+    data: {
+      labels: YEARS,
+      datasets: [
+        { label: 'Gross Margin %', data: gmPct },
+        { label: 'Operating Profit %', data: opPct },
+        { label: 'Net Profit %', data: npPct },
+      ]
+    }
+  });
+
+  new Chart(document.getElementById('yoyGrowth'), {
+    type: 'bar',
+    data: {
+      labels: YEARS,
+      datasets: [
+        { label: 'Revenue YoY %', data: revYoY },
+        { label: 'COGS YoY %', data: cogsYoY },
+        { label: 'Overheads YoY %', data: ovhYoY },
+      ]
+    }
+  });
+
+  new Chart(document.getElementById('cashSide'), {
+    type: 'line',
+    data: {
+      labels: YEARS,
+      datasets: [
+        { label: 'Cash from Customers', data: cfc },
+        { label: 'Cash to Suppliers', data: cts },
+        { label: 'Gross Cash Profit', data: gcp },
+        { label: 'Operating Cash Flow', data: ocf },
+        // { label: 'Net Cash Flow', data: ncf }, // pokud začneš počítat CFI/CFF
+      ]
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
