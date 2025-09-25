@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load humanize %}  {# pro tisícové oddělovače #}
+
+{% block content %}
+
+<h2>Tabulka {{ table.id }}</h2>
+
+<p>
+  <b>Dokument:</b> {{ table.document.original_filename }} <br>
+  <b>Typ:</b> {{ table.document.get_doc_type_display }} <br>
+  <b>Rok:</b> {{ table.document.year }} <br>
+  <b>Metoda extrakce:</b> {{ table.method }} <br>
+  <b>Počet řádků:</b> {{ table.rows.count }}
+</p>
+
+<table class="table table-striped table-bordered">
+  <thead class="table-dark">
+    <tr>
+      <th style="width: 10%">Kód</th>
+      <th style="width: 60%">Položka</th>
+      <th style="width: 30%; text-align: right;">Hodnota</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in table.rows.all %}
+    <tr>
+      <td>{{ row.code }}</td>
+      <td>{{ row.label }}</td>
+      <td style="text-align: right;">
+        {% if row.value is not None %}
+          {{ row.value|floatformat:0|intcomma }}
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="3" class="text-center text-muted">Žádné řádky k zobrazení</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<a href="{% url 'ingestion:document_detail' table.document.id %}" class="btn btn-secondary">
+  ← Zpět na dokument
+</a>
+
+{% endblock %}

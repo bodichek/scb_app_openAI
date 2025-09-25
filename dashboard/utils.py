@@ -1,79 +1,88 @@
-import pandas as pd
+from ingestion.models import ExtractedRow
 
-# Mapování čísla řádku na metriky
-ROW_MAP = {
-    "Revenue": [1, 2],          # Tržby
-    "COGS": [4, 5],             # Náklady na prodané zboží + spotřeba
-    "Overheads": [12, 13, 16, 17, 18],  # Režie
-    "FinancialIncome": [20],
-    "FinancialExpenses": [21],
-    "IncomeTax": [40],
+# Výsledovka (doc_type='income')
+ROW_MAP_INCOME = {
+    "01": "Revenue",
+    "03": "COGS",
+    "09": "Overheads",
+    "30": "Operating_Profit",
+    "49": "Profit_Before_Tax",
+    "53": "Net_Profit",
 }
 
-def extract_value(df, row_num):
-    """Najde hodnotu podle čísla řádku ve sloupci slo_dku_c"""
-    match = df[df["slo_dku_c"] == row_num]
-    if not match.empty:
-        try:
-            return int(float(match.iloc[0, 3]))  # čtvrtý sloupec obsahuje hodnoty
-        except Exception:
-            return 0
-    return 0
+# Rozvaha (doc_type='balance')
+ROW_MAP_BALANCE_ASSETS = {  # sekce = assets
+    "01": "Assets_Total",
+    "37": "Current_Assets",
+    "75": "Cash",
+}
+ROW_MAP_BALANCE_LIAB = {    # sekce = liabilities
+    "01": "Liabilities_Total",
+    "02": "Equity",
+    "21": "Profit_Current_Year",
+}
 
-def calculate_metrics(tables_by_year):
-    """
-    Přijme {year: [ExtractedTable,...]}
-    Vrátí {year: {"Revenue": .., "COGS": .., ...}}
-    """
-    metrics = {}
-    for year, tables in tables_by_year.items():
-        df = None
-        # Vezmeme první tabulku z income
-        for tb in tables:
-            try:
-                df = pd.DataFrame(list(tb.rows.values_list("data", flat=True)))
-            except Exception:
-                continue
-        if df is None or df.empty:
-            continue
+def _value_for(rows, code: str, section: str | None = None) -> float:
+    for r in rows:
+        if (r.code or "").strip() == code and (section is None or r.section == section):
+            if r.value is not None:
+                return float(r.value)
+    return 0.0
 
-        # výpočet metrik
-        revenue = sum(extract_value(df, r) for r in ROW_MAP["Revenue"])
-        cogs = sum(extract_value(df, r) for r in ROW_MAP["COGS"])
-        gross_margin = revenue - cogs
-        gross_margin_pct = (gross_margin / revenue * 100) if revenue else 0
-        overheads = sum(extract_value(df, r) for r in ROW_MAP["Overheads"])
-        operating_profit = gross_margin - overheads
-        ebt = operating_profit + (extract_value(df, 20) - extract_value(df, 21))
-        net_profit = ebt - extract_value(df, 40)
+def calculate_metrics(user, year: int) -> dict:
+    rows = ExtractedRow.objects.filter(
+        table__document__owner=user,
+        table__document__year=year
+    ).select_related("table__document")
 
-        metrics[year] = {
-            "Revenue": revenue,
-            "COGS": cogs,
-            "Gross Margin": gross_margin,
-            "Gross Margin %": gross_margin_pct,
-            "Overheads": overheads,
-            "Operating Profit": operating_profit,
-            "Net Profit": net_profit,
-        }
+    metrics = {
+        # income
+        "Revenue": 0.0, "COGS": 0.0, "Overheads": 0.0,
+        "Operating_Profit": 0.0, "Profit_Before_Tax": 0.0, "Net_Profit": 0.0,
+        # balance
+        "Assets_Total": 0.0, "Current_Assets": 0.0, "Cash": 0.0,
+        "Liabilities_Total": 0.0, "Equity": 0.0, "Profit_Current_Year": 0.0,
+        # derived
+        "Gross_Margin": 0.0, "Gross_Margin_Pct": 0.0,
+    }
+
+    income_rows = [r for r in rows if r.table.document.doc_type == "income"]
+    balance_rows = [r for r in rows if r.table.document.doc_type == "balance"]
+
+    # Income
+    for code, metric in ROW_MAP_INCOME.items():
+        metrics[metric] = _value_for(income_rows, code)
+    metrics["Gross_Margin"] = metrics["Revenue"] - metrics["COGS"]
+    metrics["Gross_Margin_Pct"] = (metrics["Gross_Margin"] / metrics["Revenue"] * 100.0) if metrics["Revenue"] else 0.0
+    if not metrics["Operating_Profit"]:
+        metrics["Operating_Profit"] = metrics["Gross_Margin"] - metrics["Overheads"]
+
+    # Balance
+    for code, metric in ROW_MAP_BALANCE_ASSETS.items():
+        metrics[metric] = _value_for(balance_rows, code, section="assets")
+    for code, metric in ROW_MAP_BALANCE_LIAB.items():
+        metrics[metric] = _value_for(balance_rows, code, section="liabilities")
+
     return metrics
 
+def calculate_growth(metrics_by_year: dict[int, dict]) -> dict[int, dict]:
+    years_sorted = sorted(metrics_by_year.keys())
+    growth_by_year: dict[int, dict] = {}
 
-def calculate_growth(metrics_by_year):
-    """
-    Vypočítá meziroční růst metrik
-    """
-    years = sorted(metrics_by_year.keys())
-    growth = {}
-    for i in range(1, len(years)):
-        y_prev = years[i-1]
-        y_curr = years[i]
-        prev, curr = metrics_by_year[y_prev], metrics_by_year[y_curr]
-        growth[y_curr] = {
-            "Revenue Growth %": ((curr["Revenue"] - prev["Revenue"]) / prev["Revenue"] * 100) if prev["Revenue"] else None,
-            "COGS Growth %": ((curr["COGS"] - prev["COGS"]) / prev["COGS"] * 100) if prev["COGS"] else None,
-            "Overheads Growth %": ((curr["Overheads"] - prev["Overheads"]) / prev["Overheads"] * 100) if prev["Overheads"] else None,
-            "Operating Profit %": (curr["Operating Profit"] / curr["Revenue"] * 100) if curr["Revenue"] else None,
-            "Net Profit %": (curr["Net Profit"] / curr["Revenue"] * 100) if curr["Revenue"] else None,
+    def growth(curr_val, prev_val):
+        if prev_val:
+            return ((curr_val - prev_val) / abs(prev_val)) * 100.0
+        return 0.0
+
+    for i in range(1, len(years_sorted)):
+        y = years_sorted[i]
+        p = years_sorted[i - 1]
+        m, mp = metrics_by_year[y], metrics_by_year[p]
+        growth_by_year[y] = {
+            "Revenue_Growth":       growth(m["Revenue"],          mp["Revenue"]),
+            "COGS_Growth":          growth(m["COGS"],             mp["COGS"]),
+            "Overheads_Growth":     growth(m["Overheads"],        mp["Overheads"]),
+            "Operating_Profit_Pct": growth(m["Operating_Profit"], mp["Operating_Profit"]),
+            "Net_Profit_Pct":       growth(m["Net_Profit"],       mp["Net_Profit"]),
         }
-    return growth
+    return growth_by_year

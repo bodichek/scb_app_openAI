@@ -1,71 +1,85 @@
-from django.db import models
 from django.conf import settings
-from django.utils.translation import gettext_lazy as _
-from django.db.models.signals import post_delete
-from django.dispatch import receiver
-import os
-
-
-def upload_to_document(instance: "Document", filename: str) -> str:
-    """Cesta pro ukládání PDF podle uživatele, roku a typu dokumentu."""
-    user_part = f"user_{instance.owner_id or 'anon'}"
-    year_part = str(instance.year or "unknown")
-    type_part = instance.doc_type or "unknown"
-    return f"pdfs/{user_part}/{year_part}/{type_part}/{filename}"
+from django.db import models
+from django.utils import timezone
 
 
 class Document(models.Model):
-    class DocType(models.TextChoices):
-        BALANCE = "balance", _("Rozvaha")
-        INCOME = "income", _("Výsledovka")
+    """Nahraný PDF dokument (rozvaha/výsledovka atd.)."""
+
+    DOC_TYPES = [
+        ("balance", "Rozvaha / Balance sheet"),
+        ("income", "Výsledovka / Income statement"),
+    ]
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="documents",
-        null=True,
-        blank=True,
     )
-    file = models.FileField(upload_to=upload_to_document)
+    file = models.FileField(upload_to="documents/%Y/%m/%d/")
     original_filename = models.CharField(max_length=255)
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    notes = models.TextField(blank=True, null=True)
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
 
-    doc_type = models.CharField(max_length=20, choices=DocType.choices, null=True, blank=True)
-    year = models.PositiveSmallIntegerField(null=True, blank=True)
+    year = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    doc_type = models.CharField(max_length=20, choices=DOC_TYPES, db_index=True)
+    notes = models.TextField(null=True, blank=True)
 
     def __str__(self) -> str:
-        return f"{self.original_filename} ({self.get_doc_type_display()} {self.year})"
+        return f"{self.original_filename} ({self.doc_type}, {self.year})"
 
 
 class ExtractedTable(models.Model):
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="tables")
-    page_number = models.IntegerField()
-    table_index = models.IntegerField()
-    method = models.CharField(max_length=50)
+    """Tabulka vytažená z PDF."""
+
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="tables",
+    )
+
+    page_number = models.PositiveIntegerField(default=1)
+    table_index = models.PositiveIntegerField(default=1)
+    method = models.CharField(max_length=50, default="merged")
+
     columns = models.JSONField(default=list)
-    meta = models.JSONField(default=dict)
+    meta = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["document", "page_number"]),
+        ]
+
     def __str__(self) -> str:
-        return f"Table {self.table_index} (p{self.page_number}) from {self.document}"
+        return f"Table {self.id} (doc={self.document_id}, page={self.page_number})"
 
 
 class ExtractedRow(models.Model):
-    table = models.ForeignKey(ExtractedTable, on_delete=models.CASCADE, related_name="rows")
-    code = models.CharField(max_length=20, db_index=True, null=True, blank=True)  # číslo řádku
-    value = models.FloatField(null=True, blank=True)                              # hodnota aktuálního období
-    raw_data = models.JSONField(default=dict, blank=True)                         # původní řádek (celý z tabulky)
+    """Řádek tabulky – kód, popis, hodnota."""
+
+    table = models.ForeignKey(
+        ExtractedTable,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+
+    code = models.CharField(max_length=50, null=True, blank=True, db_index=True)
+    label = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    value = models.FloatField(null=True, blank=True, db_index=True)
+    section = models.CharField(max_length=50, null=True, blank=True, db_index=True)
+
+    raw_data = models.JSONField(default=dict)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["code"]),
+            models.Index(fields=["label"]),
+            models.Index(fields=["section"]),
+            models.Index(fields=["value"]),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.code}: {self.value}"
-
-
-@receiver(post_delete, sender=Document)
-def delete_document_file(sender, instance, **kwargs):
-    """Při smazání Document smaže i soubor z disku."""
-    if instance.file and os.path.isfile(instance.file.path):
-        try:
-            os.remove(instance.file.path)
-        except Exception:
-            pass
+        return f"Row {self.id} (code={self.code}, label={self.label}, value={self.value})"

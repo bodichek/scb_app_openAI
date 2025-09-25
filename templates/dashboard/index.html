@@ -1,112 +1,65 @@
 {% extends "base.html" %}
+{% block title %}Přehled{% endblock %}
+
 {% block content %}
-<h2>📊 Dashboard</h2>
+<h2>📋 Základní přehled</h2>
 
-<h3>Výsledovky</h3>
+<!-- Výsledovka -->
+<h4 class="mt-4">Výkaz zisku a ztráty</h4>
 {% if income_statements %}
-<table border="1" cellpadding="5">
-  <thead>
+<table class="table table-bordered table-sm align-middle">
+  <thead class="table-light">
     <tr>
       <th>Rok</th>
-      <th>Tržby</th>
-      <th>Náklady</th>
-      <th>Zisk</th>
-      <th>Validace</th>
+      <th>Revenue</th>
+      <th>Costs (COGS)</th>
+      <th>Net Profit</th>
     </tr>
   </thead>
   <tbody>
-    {% for year, data in income_statements.items %}
+    {% for year, values in income_statements.items %}
     <tr>
-      <td>{{ year }}</td>
-      <td>{{ data.revenue|floatformat:0 }}</td>
-      <td>{{ data.costs|floatformat:0 }}</td>
-      <td>{{ data.profit|floatformat:0 }}</td>
-      <td>
-        {% if data.valid %}
-          <span style="color: green;">✅</span>
-        {% else %}
-          <span style="color: red;">❌</span>
-        {% endif %}
-      </td>
+      <td><strong>{{ year }}</strong></td>
+      <td>{{ values.revenue|floatformat:0 }}</td>
+      <td>{{ values.costs|floatformat:0 }}</td>
+      <td>{{ values.profit|floatformat:0 }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-
-<canvas id="incomeChart" width="400" height="200"></canvas>
 {% else %}
-<p>Žádné výsledovky</p>
+<p class="text-muted">Žádné výsledovky zatím nejsou nahrané.</p>
 {% endif %}
 
-
-<h3>Rozvahy</h3>
+<!-- Rozvaha -->
+<h4 class="mt-4">Rozvaha</h4>
 {% if balance_sheets %}
-<table border="1" cellpadding="5">
-  <thead>
+<table class="table table-bordered table-sm align-middle">
+  <thead class="table-light">
     <tr>
       <th>Rok</th>
-      <th>Aktiva</th>
-      <th>Pasiva</th>
-      <th>Vlastní kapitál</th>
-      <th>Validace</th>
+      <th>Assets</th>
+      <th>Liabilities</th>
+      <th>Equity</th>
     </tr>
   </thead>
   <tbody>
-    {% for year, data in balance_sheets.items %}
+    {% for year, values in balance_sheets.items %}
     <tr>
-      <td>{{ year }}</td>
-      <td>{{ data.assets|floatformat:0 }}</td>
-      <td>{{ data.liabilities|floatformat:0 }}</td>
-      <td>{{ data.equity|floatformat:0 }}</td>
-      <td>
-        {% if data.valid %}
-          <span style="color: green;">✅</span>
-        {% else %}
-          <span style="color: red;">❌</span>
-        {% endif %}
-      </td>
+      <td><strong>{{ year }}</strong></td>
+      <td>{{ values.assets|floatformat:0 }}</td>
+      <td>{{ values.liabilities|floatformat:0 }}</td>
+      <td>{{ values.equity|floatformat:0 }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p>Žádné rozvahy</p>
+<p class="text-muted">Žádné rozvahy zatím nejsou nahrané.</p>
 {% endif %}
 
-<hr>
-
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  {% if income_statements %}
-  const ctx = document.getElementById('incomeChart').getContext('2d');
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [{% for year, data in income_statements.items %}'{{ year }}',{% endfor %}],
-      datasets: [
-        {
-          label: 'Tržby',
-          data: [{% for year, data in income_statements.items %}{{ data.revenue|default:0 }},{% endfor %}],
-          borderColor: 'blue',
-          fill: false
-        },
-        {
-          label: 'Zisk',
-          data: [{% for year, data in income_statements.items %}{{ data.profit|default:0 }},{% endfor %}],
-          borderColor: 'green',
-          fill: false
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom' }
-      }
-    }
-  });
-  {% endif %}
-</script>
-
+<!-- Odkaz na detailní dashboard -->
+<div class="mt-4">
+  <a href="{% url 'dashboard:metrics' %}" class="btn btn-primary">📊 Pokročilý dashboard</a>
+</div>
 {% endblock %}

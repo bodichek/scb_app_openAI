@@ -21,19 +21,21 @@
   <!-- Rozvaha -->
   <div class="mb-3">
     <label for="{{ form.balance_files.id_for_label }}" class="form-label">Soubory – Rozvaha</label>
-    {{ form.balance_files|add_class:"form-control" }}
+    {{ form.balance_files }}
     {% for error in form.balance_files.errors %}
       <div class="text-danger">{{ error }}</div>
     {% endfor %}
+    <small class="form-text text-muted">Můžete vybrat více souborů najednou.</small>
   </div>
 
   <!-- Výsledovka -->
   <div class="mb-3">
     <label for="{{ form.income_files.id_for_label }}" class="form-label">Soubory – Výsledovka</label>
-    {{ form.income_files|add_class:"form-control" }}
+    {{ form.income_files }}
     {% for error in form.income_files.errors %}
       <div class="text-danger">{{ error }}</div>
     {% endfor %}
+    <small class="form-text text-muted">Můžete vybrat více souborů najednou.</small>
   </div>
 
   <!-- Poznámka -->
