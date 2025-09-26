@@ -17,15 +17,15 @@ def normalize_text(s: str) -> str:
 DERIVED_FORMULAS = {
     "income": {
         # 1) Základní bloky
-        "revenue": ["01", "02"],                     # Tržby vlastní výrobky/služby + Tržby zboží
-        "cogs": ["04", "05"],                        # Náklady na prodané zboží + Výkonová spotřeba
-        "overheads": ["12", "13", "16", "17", "18"], # Osobní náklady, Daně a poplatky, Odpisy, Ostatní náklady
+        "revenue": ["01", "02"],                      # Tržby vlastní výrobky/služby + Tržby zboží
+        "cogs": ["04", "05"],                         # Náklady na prodané zboží + Výkonová spotřeba
+        "overheads": ["12", "13", "16", "17", "18"],  # Osobní náklady, Daně a poplatky, Odpisy, Ostatní náklady
 
         # 2) Podpůrné položky pro EBT / Net Profit
-        "other_operating_income": ["15"],            # Jiný provozní výnos
-        "fin_income": ["20"],                        # Finanční výnosy
-        "fin_expense": ["21"],                       # Finanční náklady
-        "tax": ["40"],                               # Daň z příjmů
+        "other_operating_income": ["15"],             # Jiný provozní výnos
+        "fin_income": ["20"],                         # Finanční výnosy
+        "fin_expense": ["21"],                        # Finanční náklady
+        "tax": ["40"],                                # Daň z příjmů
     },
 
     "balance": {
@@ -42,19 +42,17 @@ def sum_codes(code_map: Dict[str, Optional[float]], codes: Iterable[str]) -> flo
     """
     Bezpečně sečte hodnoty z code_map pro zadané kódy.
     Pokud některý kód chybí, bere se 0.0.
-    Nikdy nevrací None.
+    Vždy vrací číslo (nikdy None).
     """
     acc = 0.0
     for c in codes:
         v = code_map.get(c)
-        if v is not None:
-            acc += float(v)
+        acc += float(v) if v is not None else 0.0
     return acc
-
 
 def safe_div(numerator: float, denominator: float) -> float:
     """
-    Bezpečné dělení – pokud je jmenovatel 0, vrátí 0.
+    Bezpečné dělení – pokud je jmenovatel 0 nebo None, vrátí 0.
     """
     if not denominator:
         return 0.0
@@ -95,6 +93,7 @@ def save_financial_metrics(document):
     revenue     = sum_codes(code_map, income_map.get("revenue", []))
     cogs        = sum_codes(code_map, income_map.get("cogs", []))
     overheads   = sum_codes(code_map, income_map.get("overheads", []))
+    other_op    = sum_codes(code_map, income_map.get("other_operating_income", []))
     fin_income  = sum_codes(code_map, income_map.get("fin_income", []))
     fin_expense = sum_codes(code_map, income_map.get("fin_expense", []))
     tax         = sum_codes(code_map, income_map.get("tax", []))
@@ -113,7 +112,7 @@ def save_financial_metrics(document):
                                    derived_key="gross_margin", value=gross_margin, is_derived=True, label="Gross Margin")
 
     # --- EBIT
-    ebit = gross_margin - overheads + sum_codes(code_map, income_map.get("other_operating_income", []))
+    ebit = gross_margin - overheads + other_op
     FinancialMetric.objects.create(document=document, year=year, owner=owner,
                                    derived_key="ebit", value=ebit, is_derived=True, label="EBIT")
 

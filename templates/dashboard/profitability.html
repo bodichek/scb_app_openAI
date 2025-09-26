@@ -5,92 +5,284 @@
 <div class="container">
   <h2>📊 Profitability Dashboard</h2>
 
-  <!-- 🔹 Hlavní metriky -->
+  <!-- 🔹 NEW: Your Profit Story -->
   <div class="mb-5">
-    <h4>Hlavní metriky</h4>
+    <h4>Your Profit Story</h4>
+
+    <!-- Rokové checkboxy -->
+    <div id="yearCheckboxes" class="mb-3">
+      {% for y in years_list %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input year-check" type="checkbox" value="{{ forloop.counter0 }}" id="year{{ y }}" checked>
+          <label class="form-check-label" for="year{{ y }}">{{ y }}</label>
+        </div>
+      {% endfor %}
+    </div>
+
+    <canvas id="profitStoryChart" height="100"></canvas>
+
+    <!-- Tabulka -->
+    <table class="table table-bordered mt-3" id="profitStoryTable">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for y in years_list %}
+            <th>{{ y }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Revenue</td></tr>
+        <tr><td>COGS</td></tr>
+        <tr><td>Gross Margin</td></tr>
+        <tr><td>Overheads</td></tr>
+        <tr><td>EBIT</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 🔹 NEW: Profitability Trends -->
+  <div class="mb-5">
+    <h4>Profitability Trends</h4>
+    <canvas id="profitTrendsChart" height="120"></canvas>
+
+    <table class="table table-bordered mt-3" id="profitTrendsTable">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for y in years_list %}
+            <th>{{ y }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Gross Margin %</td></tr>
+        <tr><td>Operating Profit %</td></tr>
+        <tr><td>Net Profit %</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 🔹 původní grafy zůstávají -->
+  <div class="mb-5">
+    <h4>Hlavní metriky (Revenue, COGS, Gross Margin, Overheads, EBIT, Net Profit)</h4>
     <canvas id="mainMetricsChart" height="120"></canvas>
+
+    <table class="table table-bordered mt-3" id="mainMetricsTable">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for y in years_list %}
+            <th>{{ y }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Revenue</td></tr>
+        <tr><td>COGS</td></tr>
+        <tr><td>Gross Margin</td></tr>
+        <tr><td>Overheads</td></tr>
+        <tr><td>EBIT</td></tr>
+        <tr><td>Net Profit</td></tr>
+      </tbody>
+    </table>
   </div>
 
-  <!-- 🔹 Marže v % (line) -->
   <div class="mb-5">
-    <h4>Marže (%) – vývoj</h4>
+    <h4>Marže (%)</h4>
     <canvas id="marginsChart" height="120"></canvas>
+
+    <table class="table table-bordered mt-3" id="marginsTable">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for y in years_list %}
+            <th>{{ y }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Gross Margin %</td></tr>
+        <tr><td>EBIT Margin %</td></tr>
+        <tr><td>Net Profit %</td></tr>
+      </tbody>
+    </table>
   </div>
 
-  <!-- 🔹 Marže v % (bar) -->
   <div class="mb-5">
-    <h4>Marže (%) – srovnání</h4>
-    <canvas id="marginsBarChart" height="120"></canvas>
-  </div>
-
-  <!-- 🔹 Cash Flow -->
-  <div class="mb-5">
-    <h4>Cash Flow</h4>
+    <h4>Cash Flow (OCF, Customers, Suppliers)</h4>
     <canvas id="cashFlowChart" height="120"></canvas>
+
+    <table class="table table-bordered mt-3" id="cashFlowTable">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          {% for y in years_list %}
+            <th>{{ y }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Operating Cash Flow</td></tr>
+        <tr><td>Cash from Customers</td></tr>
+        <tr><td>Cash to Suppliers</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   const years = {{ years_list|safe }};
+  const revenue = {{ revenue_list|safe }};
+  const cogs = {{ cogs_list|safe }};
+  const gm = {{ gross_margin_list|safe }};
+  const overheads = {{ overheads_list|safe }};
+  const ebit = {{ ebit_list|safe }};
+  const np = {{ net_profit_list|safe }};
+  const gm_pct = {{ gross_margin_pct_list|safe }};
+  const op_pct = {{ operating_profit_pct_list|safe }};
+  const np_pct = {{ net_profit_pct_list|safe }};
+  const ocf = {{ ocf_list|safe }};
+  const cash_from = {{ cash_from_customers_list|safe }};
+  const cash_to = {{ cash_to_suppliers_list|safe }};
 
-  // --- Hlavní metriky ---
-  new Chart(document.getElementById('mainMetricsChart').getContext('2d'), {
-    type: 'bar',
+  // --- Helper pro tabulky ---
+  function fillTable(tableId, rows, dataArrays) {
+    const table = document.getElementById(tableId);
+    rows.forEach((rowLabel, idx) => {
+      const tr = table.querySelectorAll("tbody tr")[idx];
+      const arr = dataArrays[idx];
+      years.forEach((y, j) => {
+        const val = arr[j] ?? 0;
+        let change = "";
+        if (j > 0) {
+          const prev = arr[j-1] ?? 0;
+          if (prev !== 0) {
+            const diff = ((val - prev) / Math.abs(prev)) * 100;
+            change = ` (${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%)`;
+          }
+        }
+        const td = document.createElement("td");
+        td.innerText = val.toLocaleString() + change;
+        tr.appendChild(td);
+      });
+    });
+  }
+
+  // --- Your Profit Story ---
+  let profitStoryChart;
+  function renderProfitStory(selectedIndices) {
+    const labels = ["Revenue", "Cost of Goods", "Gross Margin", "Overheads", "Operating Profit"];
+    const datasets = [];
+    selectedIndices.forEach(idx => {
+      datasets.push({
+        label: years[idx],
+        data: [
+          revenue[idx] || 0,
+          cogs[idx] || 0,
+          gm[idx] || 0,
+          overheads[idx] || 0,
+          ebit[idx] || 0,
+        ],
+        backgroundColor: "rgba(54, 162, 235, 0.7)"
+      });
+    });
+    if (profitStoryChart) profitStoryChart.destroy();
+    profitStoryChart = new Chart(document.getElementById("profitStoryChart"), {
+      type: "bar",
+      data: { labels, datasets },
+      options: { responsive: true, plugins: { legend: { position: "bottom" } } }
+    });
+  }
+
+  document.querySelectorAll(".year-check").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const selected = Array.from(document.querySelectorAll(".year-check:checked"))
+        .map(cb => parseInt(cb.value));
+      renderProfitStory(selected);
+    });
+  });
+
+  renderProfitStory(years.map((_, i) => i));
+  fillTable("profitStoryTable",
+    ["Revenue", "COGS", "Gross Margin", "Overheads", "EBIT"],
+    [revenue, cogs, gm, overheads, ebit]
+  );
+
+  // --- Profitability Trends ---
+  new Chart(document.getElementById("profitTrendsChart"), {
+    type: "bar",
     data: {
       labels: years,
       datasets: [
-        { label: 'Revenue', data: {{ revenue_list|safe }}, backgroundColor: 'rgba(54, 162, 235, 0.7)' },
-        { label: 'COGS', data: {{ cogs_list|safe }}, backgroundColor: 'rgba(255, 99, 132, 0.7)' },
-        { label: 'Gross Margin', data: {{ gross_margin_list|safe }}, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
-        { label: 'Overheads', data: {{ overheads_list|safe }}, backgroundColor: 'rgba(255, 206, 86, 0.7)' },
-        { label: 'EBIT', data: {{ ebit_list|safe }}, backgroundColor: 'rgba(153, 102, 255, 0.7)' },
-        { label: 'Net Profit', data: {{ net_profit_list|safe }}, backgroundColor: 'rgba(201, 203, 207, 0.7)' }
+        { label: "Gross Margin %", data: gm_pct, backgroundColor: "rgba(75, 192, 192, 0.7)" },
+        { label: "Operating Profit %", data: op_pct, backgroundColor: "rgba(153, 102, 255, 0.7)" },
+        { label: "Net Profit %", data: np_pct, backgroundColor: "rgba(255, 159, 64, 0.7)" }
+      ]
+    },
+    options: { responsive: true, plugins: { legend: { position: "bottom" } } }
+  });
+  fillTable("profitTrendsTable",
+    ["Gross Margin %", "Operating Profit %", "Net Profit %"],
+    [gm_pct, op_pct, np_pct]
+  );
+
+  // --- Main Metrics ---
+  new Chart(document.getElementById("mainMetricsChart"), {
+    type: "bar",
+    data: {
+      labels: years,
+      datasets: [
+        { label: 'Revenue', data: revenue, backgroundColor: 'rgba(54, 162, 235, 0.7)' },
+        { label: 'COGS', data: cogs, backgroundColor: 'rgba(255, 99, 132, 0.7)' },
+        { label: 'Gross Margin', data: gm, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
+        { label: 'Overheads', data: overheads, backgroundColor: 'rgba(255, 206, 86, 0.7)' },
+        { label: 'EBIT', data: ebit, backgroundColor: 'rgba(153, 102, 255, 0.7)' },
+        { label: 'Net Profit', data: np, backgroundColor: 'rgba(201, 203, 207, 0.7)' }
       ]
     },
     options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
   });
+  fillTable("mainMetricsTable",
+    ["Revenue", "COGS", "Gross Margin", "Overheads", "EBIT", "Net Profit"],
+    [revenue, cogs, gm, overheads, ebit, np]
+  );
 
-  // --- Marže (line) ---
-  new Chart(document.getElementById('marginsChart').getContext('2d'), {
-    type: 'line',
+  // --- Margins ---
+  new Chart(document.getElementById("marginsChart"), {
+    type: "bar",
     data: {
       labels: years,
       datasets: [
-        { label: 'Gross Margin %', data: {{ gross_margin_pct_list|safe }}, borderColor: 'rgba(75, 192, 192, 1)', tension: 0.3, fill: true },
-        { label: 'EBIT Margin %', data: {{ operating_profit_pct_list|safe }}, borderColor: 'rgba(153, 102, 255, 1)', tension: 0.3, fill: true },
-        { label: 'Net Profit %', data: {{ net_profit_pct_list|safe }}, borderColor: 'rgba(255, 159, 64, 1)', tension: 0.3, fill: true }
+        { label: 'Gross Margin %', data: gm_pct, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
+        { label: 'EBIT Margin %', data: op_pct, backgroundColor: 'rgba(153, 102, 255, 0.7)' },
+        { label: 'Net Profit %', data: np_pct, backgroundColor: 'rgba(255, 159, 64, 0.7)' }
       ]
     },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, max: 100 } } }
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
   });
-
-  // --- Marže (bar) ---
-  new Chart(document.getElementById('marginsBarChart').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels: years,
-      datasets: [
-        { label: 'Gross Margin %', data: {{ gross_margin_pct_list|safe }}, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
-        { label: 'EBIT Margin %', data: {{ operating_profit_pct_list|safe }}, backgroundColor: 'rgba(153, 102, 255, 0.7)' },
-        { label: 'Net Profit %', data: {{ net_profit_pct_list|safe }}, backgroundColor: 'rgba(255, 159, 64, 0.7)' }
-      ]
-    },
-    options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, max: 100 } } }
-  });
+  fillTable("marginsTable",
+    ["Gross Margin %", "EBIT Margin %", "Net Profit %"],
+    [gm_pct, op_pct, np_pct]
+  );
 
   // --- Cash Flow ---
-  new Chart(document.getElementById('cashFlowChart').getContext('2d'), {
-    type: 'bar',
+  new Chart(document.getElementById("cashFlowChart"), {
+    type: "bar",
     data: {
       labels: years,
       datasets: [
-        { label: 'Operating CF (OCF)', data: {{ ocf_list|safe }}, backgroundColor: 'rgba(54, 162, 235, 0.7)' },
-        { label: 'Cash from Customers', data: {{ cash_from_customers_list|safe }}, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
-        { label: 'Cash to Suppliers', data: {{ cash_to_suppliers_list|safe }}, backgroundColor: 'rgba(255, 99, 132, 0.7)' }
+        { label: 'Operating Cash Flow (OCF)', data: ocf, backgroundColor: 'rgba(54, 162, 235, 0.7)' },
+        { label: 'Cash from Customers', data: cash_from, backgroundColor: 'rgba(75, 192, 192, 0.7)' },
+        { label: 'Cash to Suppliers', data: cash_to, backgroundColor: 'rgba(255, 99, 132, 0.7)' }
       ]
     },
     options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
   });
+  fillTable("cashFlowTable",
+    ["Operating Cash Flow", "Cash from Customers", "Cash to Suppliers"],
+    [ocf, cash_from, cash_to]
+  );
 </script>
 {% endblock %}
