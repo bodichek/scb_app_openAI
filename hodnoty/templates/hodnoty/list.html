@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="container">
+  <h2>📊 Dopočítané metriky</h2>
+
+  {% for year, values in years.items %}
+    <h3 class="mt-4">Rok {{ year }}</h3>
+    <table class="table table-bordered table-sm">
+      <thead class="table-light">
+        <tr>
+          <th>Klíč</th>
+          <th>Hodnota</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, val in values.items %}
+          <tr>
+            <td><code>{{ key }}</code></td>
+            <td>{{ val|intcomma }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="2">Žádné metriky</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,13 +1,10 @@
 # dashboard/views.py
 from __future__ import annotations
-
 import io
 from typing import Dict, List, Optional
-
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse
 from django.shortcuts import render
-
 # ReportLab – hezký tabulkový export
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -16,6 +13,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from ingestion.models import Document, ExtractedRow, FinancialMetric
 from ingestion.utils import DERIVED_FORMULAS
+from django.http import JsonResponse
+import base64
+from reportlab.platypus import Image
 
 
 # -----------------------------------------------------------------------------
@@ -314,10 +314,12 @@ def metrics_dashboard(request):
 def profitability_dashboard(request):
     context = build_profitability_context(request)
 
-    years = context.get("years", [])
-    # převod dictů {year: val} -> list v pořadí years
+    # všechna dostupná léta = sjednocený seznam z context["years"]
+    years = sorted(context.get("years", []))
+
+    # převod dictů {year: val} -> list (vyplní 0 pokud chybí)
     def as_list(d: dict) -> list:
-        return [d.get(y) for y in years]
+        return [d.get(y, 0) for y in years]   # ✅ chybějící roky -> 0
 
     context.update({
         "years_list": years,
@@ -339,7 +341,6 @@ def profitability_dashboard(request):
         "ocf_list": as_list(context.get("ocf", {})),
     })
 
-    # pokud nejsou žádná data
     if not years:
         return render(request, "dashboard/profitability.html", {"years_list": []})
 
@@ -360,19 +361,43 @@ def report_view(request):
 @login_required(login_url="/login/")
 def export_pdf(request):
     """
-    Export Profit vs Cash tabulky do PDF (landscape).
+    Export Profitability report (grafy + tabulky).
+    Obsahuje 3 grafy + tabulku Profit vs Cash Flow + tabulku marží v %.
     """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
+        buffer, pagesize=landscape(A4),
+        rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
     )
 
     styles = getSampleStyleSheet()
     elements: List = []
 
-    elements.append(Paragraph("📊 Profit vs Cash Flow Report", styles["Heading1"]))
+    elements.append(Paragraph("📊 Profitability Report", styles["Heading1"]))
     elements.append(Spacer(1, 12))
 
+    # --- 1) vložení grafů z POST dat
+    for key, title in [
+        ("main_chart", "Hlavní metriky"),
+        ("margins_chart", "Marže (%) – vývoj"),
+        ("margins_bar_chart", "Marže (%) – srovnání"),
+        ("cash_chart", "Cash Flow"),
+    ]:
+        b64 = request.POST.get(key)
+        if b64 and b64.startswith("data:image"):
+            try:
+                header, data = b64.split(",", 1)
+                imgdata = base64.b64decode(data)
+                img = Image(io.BytesIO(imgdata))
+                img.drawHeight = 250
+                img.drawWidth = 500
+                elements.append(Paragraph(title, styles["Heading2"]))
+                elements.append(img)
+                elements.append(Spacer(1, 20))
+            except Exception as e:
+                elements.append(Paragraph(f"⚠️ Nepodařilo se načíst {key}: {e}", styles["Normal"]))
+
+    # --- 2) získání dat pro tabulky
     years = sorted(
         set(FinancialMetric.objects.filter(document__owner=request.user).values_list("year", flat=True))
     )
@@ -382,7 +407,6 @@ def export_pdf(request):
         buffer.seek(0)
         return FileResponse(buffer, as_attachment=True, filename="report.pdf")
 
-    # Helper na hodnotu derived metriky
     def val(year: int, key: str) -> Optional[float]:
         fm = FinancialMetric.objects.filter(
             document__owner=request.user, year=year, derived_key=key, is_derived=True
@@ -408,9 +432,18 @@ def export_pdf(request):
         ["Net CF"] + [val(y, "net_cash_flow") for y in years],
     ]
 
-    header = ["Metric"] + [str(y) for y in years]
-    data = [header] + profit_rows + [[""]] + [header] + cash_rows
+    # Margin tabulka (%)
+    margin_rows = [
+        ["Gross Margin %"] + [val(y, "gross_margin_pct") for y in years],
+        ["EBIT Margin %"] + [val(y, "operating_profit_pct") for y in years],
+        ["Net Profit %"] + [val(y, "net_profit_pct") for y in years],
+    ]
 
+    # --- 3) vykreslení tabulek
+    header = ["Metric"] + [str(y) for y in years]
+
+    # Profit + Cash
+    data = [header] + profit_rows + [[""]] + [header] + cash_rows
     table = Table(data, hAlign="LEFT")
     table.setStyle(
         TableStyle(
@@ -420,14 +453,48 @@ def export_pdf(request):
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-                # šedý oddělovač mezi Profit a Cash
                 ("BACKGROUND", (0, len(profit_rows) + 1), (-1, len(profit_rows) + 1), colors.lightgrey),
             ]
         )
     )
-
+    elements.append(Paragraph("📑 Tabulka Profit vs Cash Flow", styles["Heading2"]))
     elements.append(table)
+    elements.append(Spacer(1, 20))
 
+    # Marže
+    margin_data = [header] + margin_rows
+    margin_table = Table(margin_data, hAlign="LEFT")
+    margin_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#50c878")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ]
+        )
+    )
+    elements.append(Paragraph("📑 Tabulka marží (%)", styles["Heading2"]))
+    elements.append(margin_table)
+
+    # --- 4) build PDF
     doc.build(elements)
     buffer.seek(0)
-    return FileResponse(buffer, as_attachment=True, filename="profit_cash_report.pdf")
+    return FileResponse(buffer, as_attachment=True, filename="profitability_report.pdf")
+
+
+def update_metric(request, metric_id):
+    if request.method == "POST" and request.user.is_superuser:
+        metric = get_object_or_404(FinancialMetric, id=metric_id)
+        new_value = request.POST.get("value")
+
+        if new_value is not None:
+            try:
+                metric.value = float(new_value)  # pokud číslo
+            except ValueError:
+                metric.value = new_value  # fallback na text
+            metric.save()
+            return JsonResponse({"success": True, "new_value": metric.value})
+
+    return JsonResponse({"success": False}, status=400)

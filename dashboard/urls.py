@@ -18,4 +18,6 @@ urlpatterns = [
 
     # export PDF
     path("export-pdf/", views.export_pdf, name="export_pdf"),
+    
+    path("metrics/update/<int:metric_id>/", views.update_metric, name="update_metric"),
 ]

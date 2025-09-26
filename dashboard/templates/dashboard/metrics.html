@@ -1,12 +1,42 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% load humanize %}
+
+{% block title %}📊 Financial Dashboard{% endblock %}
 
 {% block content %}
 <h2>📊 Financial Dashboard</h2>
 
-<!-- Tabulka metrik -->
-<table class="table table-bordered">
-  <thead>
+<!-- 🔹 Filtrace -->
+<form method="get" class="mb-3 row g-2">
+  <div class="col-auto">
+    <select name="year" class="form-select">
+      <option value="">Všechny roky</option>
+      {% for y in available_years %}
+        <option value="{{ y }}" {% if request.GET.year == y|stringformat:"s" %}selected{% endif %}>
+          {{ y }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="doc" class="form-select">
+      <option value="">Všechny dokumenty</option>
+      {% for d in available_docs %}
+        <option value="{{ d.id }}" {% if request.GET.doc == d.id|stringformat:"s" %}selected{% endif %}>
+          {{ d.year }} – {{ d.original_filename }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary">🔍 Filtrovat</button>
+    <a href="{% url 'dashboard:metrics_dashboard' %}" class="btn btn-secondary">❌ Reset</a>
+  </div>
+</form>
+
+<!-- 🔹 Tabulka metrik -->
+<table class="table table-bordered table-sm align-middle">
+  <thead class="table-light">
     <tr>
       <th>Rok</th>
       <th>Revenue</th>
@@ -16,27 +46,33 @@
       <th>Overheads</th>
       <th>Operating Profit</th>
       <th>Net Profit</th>
+      {% if user.is_staff %}<th>Akce</th>{% endif %}
     </tr>
   </thead>
   <tbody>
     {% for year, values in metrics_by_year.items %}
-    <tr>
+    <tr data-id="{{ values.id }}">
       <td>{{ year }}</td>
-      <td>{{ values.Revenue|floatformat:0 }}</td>
-      <td>{{ values.COGS|floatformat:0 }}</td>
-      <td>{{ values.Gross_Margin|floatformat:0 }}</td>
+      <td class="value" data-field="Revenue">{{ values.Revenue|floatformat:0 }}</td>
+      <td class="value" data-field="COGS">{{ values.COGS|floatformat:0 }}</td>
+      <td class="value" data-field="Gross_Margin">{{ values.Gross_Margin|floatformat:0 }}</td>
       <td>{{ values.Gross_Margin_Pct|floatformat:1 }} %</td>
-      <td>{{ values.Overheads|floatformat:0 }}</td>
-      <td>{{ values.Operating_Profit|floatformat:0 }}</td>
-      <td>{{ values.Net_Profit|floatformat:0 }}</td>
+      <td class="value" data-field="Overheads">{{ values.Overheads|floatformat:0 }}</td>
+      <td class="value" data-field="Operating_Profit">{{ values.Operating_Profit|floatformat:0 }}</td>
+      <td class="value" data-field="Net_Profit">{{ values.Net_Profit|floatformat:0 }}</td>
+      {% if user.is_staff %}
+      <td><button class="btn btn-sm btn-outline-primary edit-btn">✏️ Upravit</button></td>
+      {% endif %}
     </tr>
+    {% empty %}
+    <tr><td colspan="9">Žádná data</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
-<!-- Tabulka růstu -->
-<table class="table table-striped">
-  <thead>
+<!-- 🔹 Tabulka růstu -->
+<table class="table table-striped table-sm align-middle mt-4">
+  <thead class="table-light">
     <tr>
       <th>Rok</th>
       <th>Revenue Growth %</th>
@@ -60,15 +96,15 @@
   </tbody>
 </table>
 
-<!-- Grafy -->
+<!-- 🔹 Grafy -->
 <div style="width: 90%; margin: auto;">
   <canvas id="revenueChart"></canvas>
-  <canvas id="profitChart" style="margin-top:40px;"></canvas>
-  <canvas id="growthChart" style="margin-top:40px;"></canvas>
+  <canvas id="profitChart" class="mt-4"></canvas>
+  <canvas id="growthChart" class="mt-4"></canvas>
 </div>
 
-<!-- Export PDF -->
-<form method="post" action="{% url 'dashboard:export_pdf' %}">
+<!-- 🔹 Export PDF -->
+<form method="post" action="{% url 'dashboard:export_pdf' %}" class="mt-4">
   {% csrf_token %}
   <input type="hidden" name="charts_data" id="chartsDataInput">
   <button type="submit" class="btn btn-primary">📑 Export PDF</button>
@@ -78,7 +114,7 @@
 <script>
 const data = {{ chart_data|safe }};
 
-// Graf 1: Revenue vs COGS
+// Revenue vs COGS
 new Chart(document.getElementById("revenueChart"), {
   type: "bar",
   data: {
@@ -91,7 +127,7 @@ new Chart(document.getElementById("revenueChart"), {
   options: { plugins: { title: { display: true, text: "Revenue vs COGS" }}, scales: { y: { beginAtZero: true } } }
 });
 
-// Graf 2: Profitability
+// Profitability
 new Chart(document.getElementById("profitChart"), {
   type: "bar",
   data: {
@@ -104,7 +140,7 @@ new Chart(document.getElementById("profitChart"), {
   options: { plugins: { title: { display: true, text: "Gross Margin & Net Profit" }}, scales: { y: { beginAtZero: true } } }
 });
 
-// Graf 3: Growth Trends
+// Growth Trends
 new Chart(document.getElementById("growthChart"), {
   type: "line",
   data: {
@@ -120,7 +156,7 @@ new Chart(document.getElementById("growthChart"), {
   options: { plugins: { title: { display: true, text: "Growth Trends (%)" }}, scales: { y: { beginAtZero: true } } }
 });
 
-// Před exportem zachytíme grafy
+// 📑 Export grafů
 function captureCharts() {
   const charts = ["revenueChart", "profitChart", "growthChart"];
   const images = {};
