@@ -9,11 +9,24 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 
 DEBUG = True
 
-ALLOWED_HOSTS: list[str] = ["127.0.0.1", "localhost", ".pythonanywhere.com"]
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    ".ngrok-free.dev",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.ngrok-free.dev",
+]
 
 OPENAI_MODEL = "gpt-4o-mini"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.ngrok-free.dev"
+]
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',

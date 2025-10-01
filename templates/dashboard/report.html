@@ -1,89 +1,37 @@
 {% extends "base.html" %}
+{% load static %}
+
 {% block content %}
 <div class="container">
-  <h2>📊 Report – Profit vs Cash Flow</h2>
+  <h2>📑 Financial Report</h2>
 
-  <!-- 🔹 Jednotlivé sekce -->
-  <h4>Revenue</h4>
-  <canvas></canvas>
-
-  <h4>COGS</h4>
-  <canvas></canvas>
-
-  <h4>Gross Margin, EBIT, Net Profit</h4>
-  <canvas></canvas>
-
-  <h4>Operating CF, Net Cash Flow</h4>
-  <canvas></canvas>
-
-  <hr>
-  <a href="{% url 'dashboard:export_pdf' %}" class="btn btn-primary mt-3">📥 Export do PDF</a>
+  {% if statements %}
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Revenue</th>
+        <th>Gross Margin</th>
+        <th>Net Profit</th>
+        <th>Total Assets</th>
+        <th>Total Liabilities</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in statements %}
+      <tr>
+        <td>{{ s.year }}</td>
+        <td>{{ s.data.Revenue }}</td>
+        <td>{{ s.data.GrossMargin }}</td>
+        <td>{{ s.data.NetProfit }}</td>
+        <td>{{ s.data.TotalAssets }}</td>
+        <td>{{ s.data.TotalLiabilities }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No financial statements found.</p>
+  {% endif %}
 </div>
-
-<!-- 🔹 Data z Django contextu -->
-<script>
-const years = {{ years|safe }};
-const datasets = {
-  "Revenue": {{ revenue|safe }},
-  "COGS": {{ cogs|safe }},
-  "Gross Margin": {{ gross_margin|safe }},
-  "EBIT": {{ ebit|safe }},
-  "Net Profit": {{ net_profit|safe }},
-  "Operating CF": {{ ocf|safe }},
-  "Net Cash Flow": {{ net_cash_flow|safe }},
-};
-
-// helper – převede {2021: 100, 2022: 200} -> [100,200]
-function toArray(dict) {
-  return years.map(y => dict[y] ?? null);
-}
-
-// paleta barev
-const colors = ["#4a90e2", "#50e3c2", "#f5a623", "#d0021b", "#7ed321", "#9013fe"];
-
-document.querySelectorAll("h4").forEach((heading, idx) => {
-  const canvas = heading.nextElementSibling;
-  if (!canvas || canvas.tagName !== "CANVAS") return;
-
-  // názvy datasetů z textu nadpisu (oddělené čárkou)
-  const titles = heading.innerText.split(",").map(t => t.trim());
-
-  const chartDatasets = titles
-    .filter(t => datasets[t]) // jen existující
-    .map((t, i) => ({
-      label: t,
-      data: toArray(datasets[t]),
-      borderColor: colors[(idx + i) % colors.length],
-      backgroundColor: colors[(idx + i) % colors.length] + "80", // průhledná výplň
-      fill: false,
-      tension: 0.2
-    }));
-
-  if (chartDatasets.length > 0) {
-    // Rozhodnutí: line nebo bar chart
-    const titleText = heading.innerText.toLowerCase();
-    const chartType = (titleText.includes("cash") || titleText.includes("flow") || titleText.includes("%"))
-      ? "bar"
-      : "line";
-
-    new Chart(canvas, {
-      type: chartType,
-      data: {
-        labels: years,
-        datasets: chartDatasets
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { position: "top" },
-          title: { display: false }
-        },
-        scales: {
-          y: { beginAtZero: true }
-        }
-      }
-    });
-  }
-});
-</script>
 {% endblock %}
